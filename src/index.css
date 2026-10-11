@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --brand-midnight: #191724;
+    --brand-violet: #7760B5;
+    --brand-ivory: #F7F5F0;
+    --brand-gold: #D9C7A1;
+    --neutral-main: #252330;
+    --neutral-secondary: #6E6A78;
+    --neutral-subtle: #E7E3EB;
+    --neutral-surface: #F0EDF5;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #252330;
+    background-color: #F7F5F0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Accessible focus indicators */
+  *:focus-visible {
+    outline: 2px solid #7760B5;
+    outline-offset: 2px;
+  }
+}
+
+/* Custom scrollbar for data tables and sidebars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D5D0DC;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #B8B0C5;
+}
