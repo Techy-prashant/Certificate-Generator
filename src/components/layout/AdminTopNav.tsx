@@ -2,19 +2,23 @@ import React from 'react';
 import { Menu, User, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '../ui/Badge';
-import { mockCurrentUser } from '../../services/mockData';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface TopNavProps {
   onToggleSidebar: () => void;
 }
 
 export const AdminTopNav: React.FC<TopNavProps> = ({ onToggleSidebar }) => {
+  const { profile, signOut } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    // In Phase 1 demo shell, route to admin login
+  const handleLogout = async () => {
+    await signOut();
     navigate('/admin/login');
   };
+
+  const displayName = profile?.displayName || 'Administrator';
+  const roleDisplay = (profile?.role || 'reviewer').replace('_', ' ');
 
   return (
     <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-xs border-b border-neutral-subtle h-14 flex items-center justify-between px-4 sm:px-6">
@@ -44,10 +48,10 @@ export const AdminTopNav: React.FC<TopNavProps> = ({ onToggleSidebar }) => {
           </div>
           <div className="hidden md:flex flex-col text-left">
             <span className="text-xs font-semibold text-neutral-main leading-tight">
-              {mockCurrentUser.displayName}
+              {displayName}
             </span>
             <span className="text-[10px] text-neutral-secondary leading-tight capitalize">
-              {mockCurrentUser.role.replace('_', ' ')}
+              {roleDisplay}
             </span>
           </div>
         </div>
@@ -55,7 +59,7 @@ export const AdminTopNav: React.FC<TopNavProps> = ({ onToggleSidebar }) => {
         <button
           onClick={handleLogout}
           className="p-1.5 rounded-md text-neutral-secondary hover:text-[#A52A2A] hover:bg-[#FBE5E5]/50 transition-colors"
-          title="Sign out (Mock Session)"
+          title="Sign out of Admin Session"
           aria-label="Sign out"
         >
           <LogOut className="w-4 h-4" />

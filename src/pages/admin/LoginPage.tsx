@@ -1,22 +1,38 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Lock, Mail, ArrowRight, ShieldCheck, ArrowLeft, Info } from 'lucide-react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { Lock, Mail, ArrowRight, ShieldCheck, ArrowLeft, Info, AlertCircle } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
+import { useAuth } from '../../contexts/AuthContext';
 
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('admin.namdapha@study.iitm.ac.in');
   const [password, setPassword] = useState('••••••••••••');
+  const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const { signIn, isConfigured } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const from = (location.state as any)?.from?.pathname || '/admin';
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage('');
     setIsLoading(true);
-    setTimeout(() => {
+
+    try {
+      const { error } = await signIn(email, password);
+      if (error) {
+        setErrorMessage(error.message || 'Authentication failed. Please verify your credentials.');
+      } else {
+        navigate(from, { replace: true });
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Unexpected sign-in error occurred.');
+    } finally {
       setIsLoading(false);
-      navigate('/admin');
-    }, 400);
+    }
   };
 
   return (
@@ -44,16 +60,31 @@ export const LoginPage: React.FC = () => {
             </p>
           </div>
 
-          {/* Phase 1 Architecture Notice */}
-          <div className="p-3 bg-brand-violet-light/60 border border-brand-violet/20 rounded-md text-xs text-neutral-main flex items-start gap-2.5">
-            <Info className="w-4 h-4 text-brand-violet shrink-0 mt-0.5" />
+          {/* Backend Status Notice */}
+          <div className={`p-3 rounded-md text-xs border flex items-start gap-2.5 ${
+            isConfigured
+              ? 'bg-[#E2F4E9]/60 border-[#A3D9B8] text-[#17653C]'
+              : 'bg-brand-violet-light/60 border-brand-violet/20 text-neutral-main'
+          }`}>
+            <Info className={`w-4 h-4 shrink-0 mt-0.5 ${isConfigured ? 'text-[#17653C]' : 'text-brand-violet'}`} />
             <div>
-              <strong className="font-semibold text-brand-midnight block">Phase 1 UI Shell Active</strong>
-              <span className="text-neutral-secondary text-[11px]">
-                Authentication is simulated with mock credentials. Production Supabase Auth will be connected in Phase 2.
+              <strong className="font-semibold block">
+                {isConfigured ? 'Live Supabase Auth Active' : 'Demonstration Auth Mode Active'}
+              </strong>
+              <span className="text-[11px] opacity-90">
+                {isConfigured
+                  ? 'Sign in using your authorized Supabase administrator credentials.'
+                  : 'Supabase credentials pending in .env.local. Demo mode allows test sign-in.'}
               </span>
             </div>
           </div>
+
+          {errorMessage && (
+            <div className="p-3 bg-[#FBE5E5] border border-[#F4AFAF] rounded-md text-xs text-[#A52A2A] flex items-center gap-2" role="alert">
+              <AlertCircle className="w-4 h-4 shrink-0 text-[#A52A2A]" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
 
           <form onSubmit={handleLogin} className="space-y-4">
             <Input

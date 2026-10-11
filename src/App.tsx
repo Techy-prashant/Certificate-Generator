@@ -1,5 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
+import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { PublicLayout } from './components/layout/PublicLayout';
 import { AdminLayout } from './components/layout/AdminLayout';
 
@@ -47,34 +49,57 @@ const NotFoundPage: React.FC = () => (
 
 export const App: React.FC = () => {
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Public Routes */}
-        <Route element={<PublicLayout />}>
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/verify/:code" element={<VerifyPage />} />
-        </Route>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Public Routes */}
+          <Route element={<PublicLayout />}>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/verify/:code" element={<VerifyPage />} />
+          </Route>
 
-        {/* Admin Login */}
-        <Route path="/admin/login" element={<LoginPage />} />
-        <Route path="/login" element={<Navigate to="/admin/login" replace />} />
+          {/* Admin Login */}
+          <Route path="/admin/login" element={<LoginPage />} />
+          <Route path="/login" element={<Navigate to="/admin/login" replace />} />
 
-        {/* Admin Workspace */}
-        <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<DashboardPage />} />
-          <Route path="events" element={<EventsPage />} />
-          <Route path="templates" element={<TemplatesPage />} />
-          <Route path="signatories" element={<SignatoriesPage />} />
-          <Route path="certificates" element={<CertificatesPage />} />
-          <Route path="bulk-issue" element={<BulkIssuePage />} />
-          <Route path="team" element={<TeamPage />} />
-          <Route path="audit" element={<AuditPage />} />
-        </Route>
+          {/* Admin Workspace - Protected */}
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <AdminLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<DashboardPage />} />
+            <Route path="events" element={<EventsPage />} />
+            <Route path="templates" element={<TemplatesPage />} />
+            <Route path="signatories" element={<SignatoriesPage />} />
+            <Route path="certificates" element={<CertificatesPage />} />
+            <Route path="bulk-issue" element={<BulkIssuePage />} />
+            <Route
+              path="team"
+              element={
+                <ProtectedRoute allowedRoles={['super_admin']}>
+                  <TeamPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="audit"
+              element={
+                <ProtectedRoute allowedRoles={['super_admin']}>
+                  <AuditPage />
+                </ProtectedRoute>
+              }
+            />
+          </Route>
 
-        {/* Fallback */}
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
-    </BrowserRouter>
+          {/* Fallback */}
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 };
 

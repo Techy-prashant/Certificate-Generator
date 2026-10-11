@@ -13,22 +13,29 @@ import {
   X
 } from 'lucide-react';
 
+import { useAuth } from '../../contexts/AuthContext';
+
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
 export const AdminSidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
-  const navItems = [
-    { label: 'Overview', to: '/admin', icon: LayoutDashboard, end: true },
-    { label: 'Events', to: '/admin/events', icon: Calendar },
-    { label: 'Templates', to: '/admin/templates', icon: FileCode2 },
-    { label: 'Signatures', to: '/admin/signatories', icon: PenTool },
-    { label: 'Certificates', to: '/admin/certificates', icon: Award },
-    { label: 'Bulk Issuance', to: '/admin/bulk-issue', icon: UploadCloud },
-    { label: 'Team & Permissions', to: '/admin/team', icon: Users },
-    { label: 'Audit Logs', to: '/admin/audit', icon: ShieldCheck },
+  const { profile } = useAuth();
+  const isSuperAdmin = profile?.role === 'super_admin';
+
+  const allNavItems = [
+    { label: 'Overview', to: '/admin', icon: LayoutDashboard, end: true, show: true },
+    { label: 'Events', to: '/admin/events', icon: Calendar, show: true },
+    { label: 'Templates', to: '/admin/templates', icon: FileCode2, show: true },
+    { label: 'Signatures', to: '/admin/signatories', icon: PenTool, show: profile?.role !== 'reviewer' },
+    { label: 'Certificates', to: '/admin/certificates', icon: Award, show: true },
+    { label: 'Bulk Issuance', to: '/admin/bulk-issue', icon: UploadCloud, show: true },
+    { label: 'Team & Permissions', to: '/admin/team', icon: Users, show: isSuperAdmin },
+    { label: 'Audit Logs', to: '/admin/audit', icon: ShieldCheck, show: isSuperAdmin },
   ];
+
+  const navItems = allNavItems.filter(item => item.show);
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-white border-r border-neutral-subtle w-64 select-none">
