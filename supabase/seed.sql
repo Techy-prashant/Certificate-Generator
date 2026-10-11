@@ -9,7 +9,7 @@ INSERT INTO public.organization_settings (
     name,
     display_name,
     description,
-    websiteUrl,
+    website_url,
     public_verification_enabled
 ) VALUES (
     '00000000-0000-0000-0000-000000000001',
