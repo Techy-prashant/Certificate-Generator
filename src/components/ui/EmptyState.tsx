@@ -20,8 +20,11 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   className = '',
 }) => {
   return (
-    <div className={`p-8 sm:p-12 text-center rounded-lg border border-dashed border-neutral-subtle bg-white/50 flex flex-col items-center justify-center ${className}`}>
-      <div className="w-12 h-12 rounded-full bg-brand-violet-light/50 text-brand-violet flex items-center justify-center mb-3">
+    <div
+      role="status"
+      className={`p-8 sm:p-12 text-center rounded-lg border border-dashed border-neutral-subtle bg-white/50 flex flex-col items-center justify-center ${className}`}
+    >
+      <div className="w-12 h-12 rounded-full bg-brand-violet-light/50 text-brand-violet flex items-center justify-center mb-3" aria-hidden="true">
         <Icon className="w-6 h-6" />
       </div>
       <h3 className="text-base font-semibold text-neutral-main mb-1">{title}</h3>
