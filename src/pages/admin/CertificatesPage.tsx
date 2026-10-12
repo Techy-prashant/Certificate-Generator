@@ -6,10 +6,11 @@ import {
   ExternalLink,
   ShieldAlert,
   Eye,
-  Plus
+  Plus,
+  Download
 } from 'lucide-react';
 import { portalService } from '../../services';
-import { Certificate, Event } from '../../types';
+import { Certificate } from '../../types';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
@@ -19,41 +20,33 @@ import { Modal } from '../../components/ui/Modal';
 import { Breadcrumbs } from '../../components/ui/Breadcrumbs';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { IssueCertificateModal } from '../../components/admin/IssueCertificateModal';
+import { downloadPdfBlob, generatePdfFromDetails } from '../../services/pdfService';
 
 export const CertificatesPage: React.FC = () => {
   const [certificates, setCertificates] = useState<Certificate[]>([]);
-  const [events, setEvents] = useState<Event[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [isLoading, setIsLoading] = useState(true);
 
   // Detail Modal
   const [inspectCert, setInspectCert] = useState<Certificate | null>(null);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   // Revoke Modal
   const [revokingCert, setRevokingCert] = useState<Certificate | null>(null);
-  const [revocationReason, setRevocationReason] = useState('');
+  const [internalReason, setInternalReason] = useState('');
+  const [publicReason, setPublicReason] = useState('');
   const [isRevoking, setIsRevoking] = useState(false);
 
   // Issue New Single Certificate Modal
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
-  const [issueRecipient, setIssueRecipient] = useState('');
-  const [issueEmail, setIssueEmail] = useState('');
-  const [issueEventId, setIssueEventId] = useState('');
-  const [issueAchievement, setIssueAchievement] = useState('First Place (Winner)');
 
   const fetchCertificates = async () => {
     setIsLoading(true);
     try {
-      const [certs, evts] = await Promise.all([
-        portalService.getCertificates(),
-        portalService.getEvents(),
-      ]);
+      const certs = await portalService.getCertificates();
       setCertificates(certs);
-      setEvents(evts);
-      if (evts.length > 0 && !issueEventId) {
-        setIssueEventId(evts[0].id);
-      }
     } finally {
       setIsLoading(false);
     }
@@ -64,15 +57,36 @@ export const CertificatesPage: React.FC = () => {
   }, []);
 
   const handleConfirmRevoke = async () => {
-    if (!revokingCert || !revocationReason.trim()) return;
+    if (!revokingCert || !internalReason.trim()) return;
     setIsRevoking(true);
     try {
-      await portalService.revokeCertificate(revokingCert.id, revocationReason.trim());
+      await portalService.revokeCertificate(revokingCert.id, internalReason.trim(), publicReason.trim() || undefined);
       setRevokingCert(null);
-      setRevocationReason('');
+      setInternalReason('');
+      setPublicReason('');
+      if (inspectCert?.id === revokingCert.id) {
+        setInspectCert(null);
+      }
       await fetchCertificates();
+    } catch (err: any) {
+      alert(`Revocation failed: ${err.message}`);
     } finally {
       setIsRevoking(false);
+    }
+  };
+
+  const handleDownloadFromInspect = async () => {
+    if (!inspectCert) return;
+    setIsDownloadingPdf(true);
+    try {
+      const details = await portalService.getCertificateDetails(inspectCert.id);
+      if (!details) throw new Error('Certificate details snapshot could not be found.');
+      const pdfBytes = await generatePdfFromDetails(details);
+      downloadPdfBlob(pdfBytes, `${inspectCert.verificationCode}-${inspectCert.recipientName.replace(/\s+/g, '_')}.pdf`);
+    } catch (err: any) {
+      alert(`Download failed: ${err.message}`);
+    } finally {
+      setIsDownloadingPdf(false);
     }
   };
 
@@ -201,7 +215,8 @@ export const CertificatesPage: React.FC = () => {
                           <button
                             onClick={() => {
                               setRevokingCert(cert);
-                              setRevocationReason('');
+                              setInternalReason('');
+                              setPublicReason('');
                             }}
                             className="p-1 rounded text-neutral-secondary hover:text-[#A52A2A] hover:bg-[#FBE5E5]/50 transition-colors"
                             title="Revoke Certificate"
@@ -271,10 +286,43 @@ export const CertificatesPage: React.FC = () => {
             {inspectCert.status === 'revoked' && (
               <div className="p-3 bg-[#FBE5E5] border border-[#F4AFAF] rounded text-[#A52A2A] space-y-1">
                 <span className="font-bold uppercase text-[10px]">Revocation Notice</span>
-                <p className="text-xs font-medium">{inspectCert.revocationReasonPublic}</p>
+                <p className="text-xs font-medium">Public reason: {inspectCert.revocationReasonPublic || 'Revoked by authority'}</p>
                 <p className="text-[10px] text-neutral-secondary">Internal audit note: {inspectCert.revocationReasonInternal}</p>
               </div>
             )}
+
+            <div className="pt-3 border-t border-neutral-subtle flex items-center justify-between">
+              {inspectCert.status === 'issued' ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-rose-700 hover:bg-rose-50 border-rose-200"
+                  leftIcon={<ShieldAlert className="w-3.5 h-3.5" />}
+                  onClick={() => {
+                    setRevokingCert(inspectCert);
+                  }}
+                >
+                  Revoke
+                </Button>
+              ) : (
+                <div />
+              )}
+
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setInspectCert(null)}>
+                  Close
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leftIcon={<Download className="w-3.5 h-3.5" />}
+                  isLoading={isDownloadingPdf}
+                  onClick={handleDownloadFromInspect}
+                >
+                  Download PDF
+                </Button>
+              </div>
+            </div>
           </div>
         </Modal>
       )}
@@ -298,15 +346,26 @@ export const CertificatesPage: React.FC = () => {
 
             <div className="space-y-1.5">
               <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-secondary">
-                Public Reason for Revocation <span className="text-[#A52A2A]">*</span>
+                Internal Reason (Mandatory Audit Log) <span className="text-[#A52A2A]">*</span>
               </label>
               <textarea
-                rows={3}
+                rows={2}
                 required
-                value={revocationReason}
-                onChange={(e) => setRevocationReason(e.target.value)}
-                placeholder="Explain why this certificate is being revoked (e.g. Ineligibility, disciplinary audit, typographical error correction)..."
+                value={internalReason}
+                onChange={(e) => setInternalReason(e.target.value)}
+                placeholder="Internal audit reason (e.g. Identity misattribution, academic integrity violation, test record cleanup)..."
                 className="block w-full rounded-md border border-neutral-subtle bg-white p-2.5 text-xs text-neutral-main placeholder:text-neutral-secondary/60 focus-visible:outline-2 focus-visible:outline-[#A52A2A] transition-colors"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-secondary">
+                Public Reason (Optional - Displayed on /verify/:code)
+              </label>
+              <Input
+                value={publicReason}
+                onChange={(e) => setPublicReason(e.target.value)}
+                placeholder="e.g. Certificate revoked due to administrative correction"
               />
             </div>
 
@@ -318,7 +377,7 @@ export const CertificatesPage: React.FC = () => {
                 variant="destructive"
                 size="sm"
                 isLoading={isRevoking}
-                disabled={!revocationReason.trim()}
+                disabled={!internalReason.trim()}
                 onClick={handleConfirmRevoke}
               >
                 Confirm Revocation
@@ -329,69 +388,13 @@ export const CertificatesPage: React.FC = () => {
       )}
 
       {/* Single Issuance Form Modal */}
-      <Modal
+      <IssueCertificateModal
         isOpen={isIssueModalOpen}
         onClose={() => setIsIssueModalOpen(false)}
-        title="Individual Certificate Issuance"
-        description="Issue a single official certificate with automatic 6-digit collision-safe code generation."
-        maxWidth="md"
-      >
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            alert(`Individual issuance demonstration for "${issueRecipient}". In Milestone 5, this executes the atomic PostgreSQL commit, allocates 6-digit code, renders pdf-lib output, and logs the audit event.`);
-            setIsIssueModalOpen(false);
-          }}
-          className="space-y-4 text-xs"
-        >
-          <Select
-            label="Select Event"
-            value={issueEventId}
-            onChange={(e) => setIssueEventId(e.target.value)}
-            options={events.map((evt) => ({ value: evt.id, label: `${evt.name} (${evt.eventDate})` }))}
-          />
-
-          <Input
-            label="Recipient Full Name"
-            placeholder="e.g. Sarthak Mishra"
-            required
-            value={issueRecipient}
-            onChange={(e) => setIssueRecipient(e.target.value)}
-          />
-
-          <Input
-            label="Recipient IITM BS Email (Optional)"
-            placeholder="e.g. 21f1000000@study.iitm.ac.in"
-            type="email"
-            value={issueEmail}
-            onChange={(e) => setIssueEmail(e.target.value)}
-          />
-
-          <Input
-            label="Award Title / Achievement"
-            placeholder="e.g. First Place in Machine Learning Track"
-            required
-            value={issueAchievement}
-            onChange={(e) => setIssueAchievement(e.target.value)}
-          />
-
-          <div className="p-3 bg-neutral-surface/60 rounded border border-neutral-subtle text-neutral-secondary text-[11px] space-y-1">
-            <span className="font-semibold text-neutral-main block">Issuance Pipeline Guarantee:</span>
-            <p>
-              Per Section 5 of AGENTS.md, issuance success is committed to the registry database before client-side PDF export begins.
-            </p>
-          </div>
-
-          <div className="pt-3 border-t border-neutral-subtle flex justify-end gap-2.5">
-            <Button variant="outline" size="sm" type="button" onClick={() => setIsIssueModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" size="sm" type="submit">
-              Issue & Commit Certificate
-            </Button>
-          </div>
-        </form>
-      </Modal>
+        onSuccess={async () => {
+          await fetchCertificates();
+        }}
+      />
     </div>
   );
 };

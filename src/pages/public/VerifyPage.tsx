@@ -23,6 +23,8 @@ export const VerifyPage: React.FC = () => {
   const { code } = useParams<{ code: string }>();
   const [result, setResult] = useState<PublicVerificationResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRateLimited, setIsRateLimited] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -31,13 +33,47 @@ export const VerifyPage: React.FC = () => {
         setIsLoading(false);
         return;
       }
+
+      const cleanCode = code.trim();
+
+      // Client-side rate-limiting check: max 15 lookups per 60 seconds
+      try {
+        const now = Date.now();
+        const historyKey = 'namdapha_verification_lookups';
+        const rawHistory = sessionStorage.getItem(historyKey);
+        const lookups: number[] = rawHistory ? JSON.parse(rawHistory) : [];
+        const recentLookups = lookups.filter((ts) => now - ts < 60000);
+
+        if (recentLookups.length >= 15) {
+          if (isMounted) {
+            setIsRateLimited(true);
+            setIsLoading(false);
+          }
+          return;
+        }
+
+        recentLookups.push(now);
+        sessionStorage.setItem(historyKey, JSON.stringify(recentLookups));
+      } catch {
+        // Fallback gracefully if storage is restricted
+      }
+
+      // Input sanitization: must be exactly 6 numeric digits
+      if (!/^\d{6}$/.test(cleanCode)) {
+        if (isMounted) {
+          setResult({ isValid: false, status: 'not_found' });
+          setIsLoading(false);
+        }
+        return;
+      }
+
       setIsLoading(true);
       try {
-        const res = await portalService.verifyCertificate(code);
+        const res = await portalService.verifyCertificate(cleanCode);
         if (isMounted) {
           setResult(res);
         }
-      } catch (err) {
+      } catch {
         if (isMounted) {
           setResult({ isValid: false, status: 'not_found' });
         }
@@ -78,8 +114,24 @@ export const VerifyPage: React.FC = () => {
           </span>
         </div>
 
+        {/* Rate Limited State */}
+        {isRateLimited && (
+          <div className="bg-amber-50 rounded-xl shadow-md border border-amber-200 p-8 text-center space-y-4">
+            <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-amber-900">Verification Rate Limit Reached</h2>
+              <p className="text-xs text-amber-800 mt-1 max-w-md mx-auto">
+                To protect six-digit certificate verification codes against brute-force enumeration, queries are limited to 15 per minute per client.
+              </p>
+            </div>
+            <p className="text-[11px] text-amber-700">Please wait 60 seconds before submitting further lookup queries.</p>
+          </div>
+        )}
+
         {/* Outcome 1: VALID */}
-        {result?.isValid && result.status === 'issued' && (
+        {!isRateLimited && result?.isValid && result.status === 'issued' && (
           <div className="bg-white rounded-xl shadow-md border border-neutral-subtle overflow-hidden">
             {/* Status Header */}
             <div className="bg-[#E2F4E9] border-b border-[#A3D9B8] p-5 sm:p-6 text-center space-y-2">
@@ -149,24 +201,26 @@ export const VerifyPage: React.FC = () => {
               {/* Action Buttons */}
               <div className="pt-2 flex flex-col sm:flex-row gap-3">
                 <Button
-                  variant="primary"
+                  variant="outline"
                   className="flex-1"
                   leftIcon={<Download className="w-4 h-4" />}
-                  onClick={() => alert(`Download demonstration for certificate ${result.verificationCode}. In Phase 2, this fetches the validated PDF snapshot.`)}
+                  onClick={() => window.print()}
                 >
-                  Download Official PDF
+                  Print Verification Record
                 </Button>
                 <Button
-                  variant="outline"
-                  leftIcon={<Share2 className="w-4 h-4" />}
+                  variant="primary"
+                  className="flex-1"
+                  leftIcon={isCopied ? <ShieldCheck className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
                   onClick={() => {
                     if (navigator.clipboard) {
                       navigator.clipboard.writeText(window.location.href);
-                      alert('Verification URL copied to clipboard.');
+                      setIsCopied(true);
+                      setTimeout(() => setIsCopied(false), 2500);
                     }
                   }}
                 >
-                  Copy Verification Link
+                  {isCopied ? 'Link Copied!' : 'Copy Verification Link'}
                 </Button>
               </div>
             </div>
