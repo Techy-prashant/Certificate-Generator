@@ -219,6 +219,28 @@ npm run build
 
 ---
 
+## ❓ Troubleshooting & FAQ
+
+<details>
+<summary><b>Can I run the portal entirely offline without Supabase?</b></summary>
+<br>
+Yes! The portal features a resilient in-memory mock service layer. Simply set <code>VITE_USE_MOCK_API=true</code> in your <code>.env.local</code> file or run without credentials; the application will automatically initialize sample events, templates, and certificates.
+</details>
+
+<details>
+<summary><b>How does watermark protection work during draft preview?</b></summary>
+<br>
+Instead of generating an unprotected image tag or forcing a PDF download, the portal uses HTML5 2D Canvas to rasterize preview pixels directly in memory. A visible diagonal watermark is baked into the raster buffer, and right-click, selection, and print hotkeys are intercepted.
+</details>
+
+<details>
+<summary><b>What happens to historical certificates if a template is edited?</b></summary>
+<br>
+Nothing! The platform implements an immutable snapshot architecture. When a certificate is issued, a frozen copy of the template coordinates, fonts, and signatories is committed to the database. Future template modifications only affect new issuances.
+</details>
+
+---
+
 ## 👥 Authors & Acknowledgments
 
 - **Developed by**: [Techy-prashant](https://github.com/Techy-prashant)
