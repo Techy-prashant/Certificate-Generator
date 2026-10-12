@@ -19,7 +19,7 @@ export interface OrganizationSettings {
   createdAt: string;
 }
 
-export type EventCategory = 'Technology' | 'Debate' | 'Cultural' | 'Music' | 'Sports' | 'Other';
+export type EventCategory = 'Sports' | 'Impact' | 'Cultural' | 'Technology' | 'Debate' | 'Music' | 'Other';
 export type EventScope = 'House-level' | 'Inter-house' | 'Pan-Namdapha';
 export type EventStatus = 'draft' | 'active' | 'completed' | 'archived';
 
@@ -32,6 +32,7 @@ export interface Event {
   eventDate: string;
   status: EventStatus;
   defaultTemplateId?: string;
+  defaultTemplateName?: string;
   issuanceApprovalRequired: boolean;
   createdByName: string;
   createdAt: string;
@@ -43,25 +44,58 @@ export interface AwardCategory {
   name: string;
   description?: string;
   templateId?: string;
+  templateName?: string;
   status: 'active' | 'inactive';
+}
+
+export interface EventSignatory {
+  id: string;
+  eventId: string;
+  signatoryId: string;
+  signatoryName: string;
+  signatoryDesignation: string;
+  signatureAssetUrl: string;
+  awardCategoryId?: string;
+  awardCategoryName?: string;
+  displayOrder: number;
+  createdAt: string;
 }
 
 export type TemplateStatus = 'draft' | 'published' | 'archived';
 export type TemplateOrientation = 'landscape' | 'portrait';
 
+export type TemplateFieldType =
+  | 'recipient_name'
+  | 'event_name'
+  | 'achievement'
+  | 'position'
+  | 'date'
+  | 'organization_name'
+  | 'verification_code'
+  | 'qr_code'
+  | 'signatory'
+  | 'signatory_name'
+  | 'signatory_designation'
+  | 'static_text';
+
 export interface TemplateFieldConfig {
   id: string;
   name: string;
-  type: 'recipient_name' | 'event_name' | 'achievement' | 'date' | 'qr_code' | 'verification_code' | 'signatory' | 'static_text';
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  fontSize: number;
+  type: TemplateFieldType;
+  x: number; // in mm relative to top-left
+  y: number; // in mm relative to top-left
+  width: number; // in mm
+  height: number; // in mm
+  fontSize: number; // in pt
   fontFamily: string;
+  fontWeight?: 'normal' | 'bold' | string;
   color: string;
   alignment: 'left' | 'center' | 'right';
   isRequired: boolean;
+  letterSpacing?: number;
+  overflowBehavior?: 'wrap' | 'shrink' | 'clip';
+  staticTextContent?: string;
+  signatoryIndex?: number; // 0 for 1st signatory, 1 for 2nd, etc.
 }
 
 export interface Template {
@@ -70,6 +104,7 @@ export interface Template {
   description?: string;
   category?: string;
   backgroundUrl: string;
+  backgroundStoragePath?: string;
   pageWidth: number;
   pageHeight: number;
   pageUnit: 'px' | 'mm' | 'in';
@@ -88,6 +123,7 @@ export interface Signatory {
   name: string;
   designation: string;
   signatureAssetUrl: string;
+  signatureStoragePath?: string;
   status: SignatoryStatus;
   usagePermissions?: string;
   createdAt: string;
@@ -119,7 +155,42 @@ export interface Certificate {
   pdfDownloadAvailable: boolean;
 }
 
-export type BatchStatus = 'draft' | 'validating' | 'awaiting_approval' | 'processing' | 'completed' | 'partially_completed' | 'failed';
+export interface IssueCertificateInput {
+  eventId: string;
+  awardCategoryId: string;
+  templateId: string;
+  recipientName: string;
+  recipientEmail?: string;
+  achievement: string;
+  issueDate: string;
+  signatoryIds: string[];
+}
+
+export interface CertificateDetails {
+  certificate: Certificate;
+  templateSnapshot: {
+    templateId: string;
+    templateName: string;
+    versionNumber: number;
+    backgroundUrl?: string;
+    backgroundStoragePath?: string;
+    pageWidth: number;
+    pageHeight: number;
+    pageUnit: 'px' | 'mm' | 'in';
+    orientation: TemplateOrientation;
+    fieldConfiguration: TemplateFieldConfig[];
+  };
+  signatorySnapshot: Array<{
+    signatoryId: string;
+    name: string;
+    designation: string;
+    signatureAssetUrl?: string;
+    signatureStoragePath?: string;
+    displayOrder: number;
+  }>;
+}
+
+export type BatchStatus = 'draft' | 'validating' | 'awaiting_approval' | 'approved' | 'processing' | 'completed' | 'partially_completed' | 'failed' | 'cancelled';
 
 export interface IssuanceBatch {
   id: string;
@@ -134,6 +205,7 @@ export interface IssuanceBatch {
   createdByName: string;
   createdAt: string;
   confirmedAt?: string;
+  completedAt?: string;
 }
 
 export interface AuditLog {
@@ -144,6 +216,7 @@ export interface AuditLog {
   targetType: string;
   targetId?: string;
   targetDescription: string;
+  metadata?: Record<string, any>;
   ipAddress?: string;
   createdAt: string;
 }
