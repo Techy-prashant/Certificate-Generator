@@ -180,6 +180,16 @@ To run migrations on your Supabase instance:
 npx supabase db push
 ```
 
+### Core Schema Overview:
+| Table | Description | Access Policy |
+|---|---|---|
+| `certificates` | Issued certificate registry with 6-digit unique lookup code | Public read for active; Admin full access |
+| `templates` | Visual layout schema, canvas dimensions, background storage path | Authenticated organizers & admins |
+| `signatories` | Official signature assets, designations, and display ordering | Authenticated organizers & admins |
+| `events` | College fest events, competitions, and categories | Authenticated organizers & admins |
+| `audit_logs` | Append-only security ledger tracking issuance and revocations | Super admin read-only |
+
+
 ---
 
 ## 🧪 Test Suite
