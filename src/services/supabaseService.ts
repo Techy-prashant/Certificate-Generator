@@ -21,6 +21,10 @@ import {
   OrganizationSettings
 } from '../types';
 
+/**
+ * Production implementation of CertificatePortalService communicating with Supabase PostgreSQL,
+ * Row Level Security (RLS) policies, and private Storage buckets.
+ */
 export class SupabaseService implements CertificatePortalService {
   public isMock = false;
 
@@ -31,6 +35,9 @@ export class SupabaseService implements CertificatePortalService {
     return supabase;
   }
 
+  /**
+   * Fetches active institutional organization profile and branding configuration.
+   */
   async getOrganizationSettings(): Promise<OrganizationSettings> {
     const client = this.checkClient();
     const { data, error } = await client
