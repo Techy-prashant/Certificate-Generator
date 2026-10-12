@@ -33,6 +33,10 @@ import {
   mockEventSignatories
 } from './mockData';
 
+/**
+ * Offline in-memory implementation of CertificatePortalService providing
+ * full parity with the Supabase PostgreSQL backend for local testing and demos.
+ */
 class MockApiService implements CertificatePortalService {
   public isMock = true;
   private certificates: Certificate[] = [...mockCertificates];
