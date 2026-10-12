@@ -1,87 +1,394 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import Papa from 'papaparse';
+import JSZip from 'jszip';
 import {
   UploadCloud,
-  FileSpreadsheet,
   CheckCircle2,
   ArrowRight,
-  Download
+  Download,
+  RotateCcw,
+  Check,
+  Sparkles
 } from 'lucide-react';
+import { DESCRIPTION_PRESETS, autoDetectCitation } from '../../utils/descriptionPresets';
 import { portalService } from '../../services';
-import { IssuanceBatch, Event } from '../../types';
+import {
+  IssuanceBatch,
+  Event,
+  AwardCategory,
+  Template,
+  Signatory,
+  Certificate
+} from '../../types';
 import { Card, CardHeader, CardContent } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Select } from '../../components/ui/Select';
 import { Breadcrumbs } from '../../components/ui/Breadcrumbs';
 import { LoadingState } from '../../components/ui/LoadingState';
+import { generatePdfFromDetails } from '../../services/pdfService';
+
+interface ParsedRow {
+  index: number;
+  raw: Record<string, string>;
+  recipientName: string;
+  recipientEmail?: string;
+  achievement: string;
+  isValid: boolean;
+  errors: string[];
+  isExcluded: boolean;
+  issuedCert?: Certificate;
+}
 
 export const BulkIssuePage: React.FC = () => {
   const [batches, setBatches] = useState<IssuanceBatch[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
+  const [categories, setCategories] = useState<AwardCategory[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [signatories, setSignatories] = useState<Signatory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Workflow Simulation State
+  // Workflow Steps: 1: Config, 2: Upload, 3: Map & Validate, 4: Execute & Download
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
-  const [selectedEventId, setSelectedEventId] = useState('');
-  const [uploadedFileName, setUploadedFileName] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
 
-  // Simulated parsed CSV rows
-  const simulatedRows = [
-    { row: 1, name: 'Siddharth Rao', email: 'sid.r@study.iitm.ac.in', category: 'Participation', status: 'valid' },
-    { row: 2, name: 'Meera Krishnan', email: 'meera.k@study.iitm.ac.in', category: 'Finalist', status: 'valid' },
-    { row: 3, name: 'Tanmay Bhatt', email: 'tanmay@study.iitm.ac.in', category: 'Participation', status: 'valid' },
-    { row: 4, name: '', email: 'unknown@study.iitm.ac.in', category: 'Participation', status: 'error', error: 'Missing recipient name' },
-    { row: 5, name: 'Rohit Joshi', email: 'rohit.j@study.iitm.ac.in', category: 'InvalidCategory', status: 'error', error: 'Category not recognized' },
-  ];
+  // Configuration State
+  const [selectedEventId, setSelectedEventId] = useState('');
+  const [selectedCategoryId, setSelectedCategoryId] = useState('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [selectedSignatoryIds, setSelectedSignatoryIds] = useState<string[]>([]);
+  const [defaultIssueDate, setDefaultIssueDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // CSV File & Parsing State
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
+  const [rawParsedData, setRawParsedData] = useState<Record<string, string>[]>([]);
+  const [nameColumn, setNameColumn] = useState('');
+  const [emailColumn, setEmailColumn] = useState('');
+  const [achievementColumn, setAchievementColumn] = useState('');
+
+  // Processed Rows & Validation State
+  const [rows, setRows] = useState<ParsedRow[]>([]);
+
+  // Execution Progress
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processedCount, setProcessedCount] = useState(0);
+  const [successCount, setSuccessCount] = useState(0);
+  const [failureCount, setFailureCount] = useState(0);
+  const [createdBatch, setCreatedBatch] = useState<IssuanceBatch | null>(null);
+  const [zipBlob, setZipBlob] = useState<Blob | null>(null);
+  const [isZipping, setIsZipping] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Load initial prerequisite data
+  const loadPrerequisites = async () => {
+    setIsLoading(true);
+    try {
+      const [bts, evts, tpls, sigs] = await Promise.all([
+        portalService.getIssuanceBatches(),
+        portalService.getEvents(),
+        portalService.getTemplates(),
+        portalService.getSignatories(),
+      ]);
+
+      setBatches(bts);
+      const activeEvents = evts.filter((e) => e.status !== 'archived');
+      setEvents(activeEvents);
+      const publishedTpls = tpls.filter((t) => t.status === 'published');
+      setTemplates(publishedTpls);
+      const activeSigs = sigs.filter((s) => s.status === 'active');
+      setSignatories(activeSigs);
+
+      if (activeEvents.length > 0 && !selectedEventId) {
+        setSelectedEventId(activeEvents[0].id);
+      }
+      if (publishedTpls.length > 0 && !selectedTemplateId) {
+        setSelectedTemplateId(publishedTpls[0].id);
+      }
+      if (activeSigs.length > 0 && selectedSignatoryIds.length === 0) {
+        setSelectedSignatoryIds(activeSigs.slice(0, 2).map((s) => s.id));
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    let isMounted = true;
-    const load = async () => {
-      try {
-        const [bts, evts] = await Promise.all([
-          portalService.getIssuanceBatches(),
-          portalService.getEvents(),
-        ]);
-        if (isMounted) {
-          setBatches(bts);
-          setEvents(evts);
-          if (evts.length > 0) setSelectedEventId(evts[0].id);
-        }
-      } finally {
-        if (isMounted) setIsLoading(false);
-      }
-    };
-    load();
-    return () => {
-      isMounted = false;
-    };
+    loadPrerequisites();
   }, []);
 
-  const handleSimulateUpload = () => {
-    setUploadedFileName('namdapha_participants_batch_april.csv');
-    setCurrentStep(2);
+  // Update categories whenever selected event changes
+  useEffect(() => {
+    if (!selectedEventId) {
+      setCategories([]);
+      return;
+    }
+    const loadCats = async () => {
+      try {
+        const [cats, eventSigs] = await Promise.all([
+          portalService.getAwardCategories(selectedEventId),
+          portalService.getEventSignatories(selectedEventId).catch(() => []),
+        ]);
+        setCategories(cats);
+        if (cats.length > 0) setSelectedCategoryId(cats[0].id);
+
+        const currentEvent = events.find((e) => e.id === selectedEventId);
+        if (currentEvent?.defaultTemplateId) {
+          setSelectedTemplateId(currentEvent.defaultTemplateId);
+        }
+        if (eventSigs.length > 0) {
+          setSelectedSignatoryIds(eventSigs.map((es) => es.signatoryId));
+        }
+      } catch (err) {
+        console.warn('Error fetching event details:', err);
+      }
+    };
+    loadCats();
+  }, [selectedEventId, events]);
+
+  // Handle CSV file selection and parsing with PapaParse
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvFile(file);
+
+    Papa.parse<Record<string, string>>(file, {
+      header: true,
+      skipEmptyLines: 'greedy',
+      encoding: 'UTF-8',
+      complete: (results) => {
+        const headers = results.meta.fields || [];
+        setCsvHeaders(headers);
+        setRawParsedData(results.data);
+
+        // Auto-detect columns
+        const lowerHeaders = headers.map((h) => h.toLowerCase());
+
+        // Name auto-match
+        const nameIdx = lowerHeaders.findIndex((h) =>
+          h.includes('name') || h.includes('recipient') || h.includes('student') || h.includes('participant')
+        );
+        const matchedName = nameIdx !== -1 ? headers[nameIdx] : headers[0] || '';
+        setNameColumn(matchedName);
+
+        // Email auto-match
+        const emailIdx = lowerHeaders.findIndex((h) => h.includes('email') || h.includes('mail'));
+        setEmailColumn(emailIdx !== -1 ? headers[emailIdx] : '');
+
+        // Achievement auto-match
+        const achIdx = lowerHeaders.findIndex((h) =>
+          h.includes('award') || h.includes('achievement') || h.includes('category') || h.includes('position') || h.includes('rank')
+        );
+        setAchievementColumn(achIdx !== -1 ? headers[achIdx] : '');
+
+        setCurrentStep(3);
+      },
+      error: (error) => {
+        alert(`Failed to parse CSV: ${error.message}`);
+      },
+    });
   };
 
-  const handleSimulateValidate = () => {
-    setCurrentStep(3);
+  // Process and re-validate rows whenever column mapping changes
+  useEffect(() => {
+    if (rawParsedData.length === 0) return;
+
+    const currentEvent = events.find((e) => e.id === selectedEventId);
+    const categoryName = categories.find((c) => c.id === selectedCategoryId)?.name || 'Certificate of Excellence';
+    const defaultAchievement = autoDetectCitation(categoryName, currentEvent?.name);
+
+    const processed: ParsedRow[] = rawParsedData.map((raw, idx) => {
+      const recipientName = (nameColumn && raw[nameColumn] ? raw[nameColumn] : '').trim();
+      const recipientEmail = (emailColumn && raw[emailColumn] ? raw[emailColumn] : '').trim();
+      const rawAchievement = (achievementColumn && raw[achievementColumn] ? raw[achievementColumn] : defaultAchievement).trim();
+      const achievement = autoDetectCitation(rawAchievement, currentEvent?.name);
+
+      const errors: string[] = [];
+      if (!recipientName) {
+        errors.push('Missing recipient name');
+      }
+      if (recipientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
+        errors.push('Invalid email format');
+      }
+
+      return {
+        index: idx + 1,
+        raw,
+        recipientName,
+        recipientEmail: recipientEmail || undefined,
+        achievement,
+        isValid: errors.length === 0,
+        errors,
+        isExcluded: false,
+      };
+    });
+
+    setRows(processed);
+  }, [rawParsedData, nameColumn, emailColumn, achievementColumn, categories, selectedCategoryId, selectedEventId, events]);
+
+  // Toggle row exclusion
+  const handleToggleExclude = (index: number) => {
+    setRows((prev) =>
+      prev.map((r) => (r.index === index ? { ...r, isExcluded: !r.isExcluded } : r))
+    );
   };
 
-  const handleSimulateConfirm = () => {
+  // Exclude all invalid rows
+  const handleExcludeAllInvalid = () => {
+    setRows((prev) =>
+      prev.map((r) => (!r.isValid ? { ...r, isExcluded: true } : r))
+    );
+  };
+
+  const validRows = rows.filter((r) => r.isValid && !r.isExcluded);
+  const invalidRows = rows.filter((r) => !r.isValid);
+
+  // Execute Batch Issuance with Bounded Concurrency
+  const handleExecuteBatch = async () => {
+    if (!selectedEventId || !selectedTemplateId || validRows.length === 0) {
+      alert('Please configure event, template, and ensure there are valid rows to issue.');
+      return;
+    }
+
     setIsProcessing(true);
-    setTimeout(() => {
+    setCurrentStep(4);
+    setProcessedCount(0);
+    setSuccessCount(0);
+    setFailureCount(0);
+
+    const zip = new JSZip();
+
+    try {
+      // 1. Create batch record in database
+      const batchRecord = await portalService.createIssuanceBatch({
+        eventId: selectedEventId,
+        originalFilename: csvFile?.name || 'bulk_import.csv',
+        totalRows: rows.length,
+        validRows: validRows.length,
+        status: 'processing',
+      });
+      setCreatedBatch(batchRecord);
+
+      let currentSuccess = 0;
+      let currentFailure = 0;
+      const updatedRows = [...rows];
+
+      // Bounded concurrency chunk size = 3
+      const chunkSize = 3;
+      for (let i = 0; i < validRows.length; i += chunkSize) {
+        const chunk = validRows.slice(i, i + chunkSize);
+
+        await Promise.all(
+          chunk.map(async (row) => {
+            try {
+              // Issue certificate
+              const cert = await portalService.issueCertificate({
+                eventId: selectedEventId,
+                awardCategoryId: selectedCategoryId,
+                templateId: selectedTemplateId,
+                recipientName: row.recipientName,
+                recipientEmail: row.recipientEmail,
+                achievement: row.achievement,
+                issueDate: defaultIssueDate,
+                signatoryIds: selectedSignatoryIds,
+              });
+
+              // Fetch details & render PDF
+              const details = await portalService.getCertificateDetails(cert.id);
+              if (details) {
+                const pdfBytes = await generatePdfFromDetails(details);
+                const cleanName = row.recipientName
+                  .replace(/[^a-zA-Z0-9_-]/g, '_')
+                  .replace(/_+/g, '_')
+                  .replace(/^_|_$/g, '')
+                  .toLowerCase();
+                const safeName = `${cleanName || 'recipient'}_${cert.verificationCode}.pdf`;
+                zip.file(safeName, pdfBytes);
+              }
+
+              currentSuccess++;
+              setSuccessCount(currentSuccess);
+
+              // Update row in state
+              const rowIndex = updatedRows.findIndex((r) => r.index === row.index);
+              if (rowIndex !== -1) {
+                updatedRows[rowIndex] = { ...updatedRows[rowIndex], issuedCert: cert };
+              }
+            } catch (err: any) {
+              console.error(`Row ${row.index} issuance failed:`, err);
+              currentFailure++;
+              setFailureCount(currentFailure);
+              const rowIndex = updatedRows.findIndex((r) => r.index === row.index);
+              if (rowIndex !== -1) {
+                updatedRows[rowIndex] = {
+                  ...updatedRows[rowIndex],
+                  isValid: false,
+                  errors: [...updatedRows[rowIndex].errors, err.message || 'Issuance failed'],
+                };
+              }
+            } finally {
+              setProcessedCount((prev) => prev + 1);
+            }
+          })
+        );
+      }
+
+      setRows(updatedRows);
+
+      // Finalize batch status
+      const finalStatus = currentFailure === 0 ? 'completed' : currentSuccess > 0 ? 'partially_completed' : 'failed';
+      await portalService.updateIssuanceBatch(batchRecord.id, {
+        status: finalStatus,
+        issuedCount: currentSuccess,
+        failedCount: currentFailure,
+        completedAt: new Date().toISOString(),
+      });
+
+      // Package ZIP Archive
+      setIsZipping(true);
+      const generatedZip = await zip.generateAsync({ type: 'blob' });
+      setZipBlob(generatedZip);
+      setIsZipping(false);
+
+      // Refresh batches table
+      const refreshedBatches = await portalService.getIssuanceBatches();
+      setBatches(refreshedBatches);
+    } catch (err: any) {
+      alert(`Batch processing error: ${err.message}`);
+    } finally {
       setIsProcessing(false);
-      setCurrentStep(4);
-    }, 800);
+    }
   };
 
+  // Download packaged ZIP
+  const handleDownloadZip = () => {
+    if (!zipBlob) return;
+    const url = URL.createObjectURL(zipBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `namdapha-batch-${createdBatch?.id || 'certificates'}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
+
+  // Reset workflow
   const handleReset = () => {
     setCurrentStep(1);
-    setUploadedFileName('');
+    setCsvFile(null);
+    setRawParsedData([]);
+    setRows([]);
+    setCreatedBatch(null);
+    setZipBlob(null);
+    setProcessedCount(0);
+    setSuccessCount(0);
+    setFailureCount(0);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   if (isLoading) {
-    return <LoadingState message="Loading bulk batches..." />;
+    return <LoadingState message="Loading bulk issuance workspace..." />;
   }
 
   return (
@@ -92,221 +399,509 @@ export const BulkIssuePage: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-neutral-main">Spreadsheet Bulk Issuance</h1>
           <p className="text-xs sm:text-sm text-neutral-secondary mt-0.5">
-            Import recipient CSV spreadsheets, validate award rows, and generate verified certificates in bulk
+            Import recipient CSV spreadsheets, validate award rows, and generate verified certificates in bulk with ZIP downloads
           </p>
         </div>
+        {currentStep > 1 && (
+          <Button variant="outline" size="sm" leftIcon={<RotateCcw className="w-3.5 h-3.5" />} onClick={handleReset}>
+            Start Over
+          </Button>
+        )}
       </div>
 
-      {/* Guided 4-Step Workflow Stepper */}
-      <Card>
-        <CardContent className="p-4 sm:p-6 space-y-6">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 border-b border-neutral-subtle pb-4 text-xs font-semibold">
-            <div className={`flex items-center gap-2 ${currentStep >= 1 ? 'text-brand-violet' : 'text-neutral-secondary/60'}`}>
-              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${currentStep >= 1 ? 'bg-brand-violet text-white' : 'bg-neutral-surface text-neutral-secondary'}`}>
-                1
+      {/* Guided 4-Step Stepper */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {[
+          { step: 1, title: '1. Event & Template', desc: 'Select target layout' },
+          { step: 2, title: '2. Upload CSV', desc: 'UTF-8 spreadsheet' },
+          { step: 3, title: '3. Map & Validate', desc: 'Pre-flight checks' },
+          { step: 4, title: '4. Issuance & ZIP', desc: 'Generate certificates' },
+        ].map((item) => (
+          <div
+            key={item.step}
+            className={`p-3 rounded-lg border text-left transition-all ${
+              currentStep === item.step
+                ? 'border-brand-violet bg-brand-violet/5 ring-1 ring-brand-violet'
+                : currentStep > item.step
+                ? 'border-emerald-300 bg-emerald-50/50'
+                : 'border-neutral-subtle bg-white opacity-70'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span
+                className={`text-xs font-bold ${
+                  currentStep === item.step
+                    ? 'text-brand-violet'
+                    : currentStep > item.step
+                    ? 'text-emerald-700'
+                    : 'text-neutral-secondary'
+                }`}
+              >
+                {item.title}
               </span>
-              <span>Upload CSV</span>
+              {currentStep > item.step && <Check className="w-4 h-4 text-emerald-600" />}
             </div>
-            <div className={`flex items-center gap-2 ${currentStep >= 2 ? 'text-brand-violet' : 'text-neutral-secondary/60'}`}>
-              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${currentStep >= 2 ? 'bg-brand-violet text-white' : 'bg-neutral-surface text-neutral-secondary'}`}>
-                2
-              </span>
-              <span>Map & Validate</span>
-            </div>
-            <div className={`flex items-center gap-2 ${currentStep >= 3 ? 'text-brand-violet' : 'text-neutral-secondary/60'}`}>
-              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${currentStep >= 3 ? 'bg-brand-violet text-white' : 'bg-neutral-surface text-neutral-secondary'}`}>
-                3
-              </span>
-              <span>Review Batch</span>
-            </div>
-            <div className={`flex items-center gap-2 ${currentStep === 4 ? 'text-[#17653C]' : 'text-neutral-secondary/60'}`}>
-              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${currentStep === 4 ? 'bg-[#17653C] text-white' : 'bg-neutral-surface text-neutral-secondary'}`}>
-                4
-              </span>
-              <span>Download ZIP</span>
-            </div>
+            <span className="text-[11px] text-neutral-secondary block mt-0.5">{item.desc}</span>
           </div>
+        ))}
+      </div>
 
-          {/* STEP 1: UPLOAD */}
-          {currentStep === 1 && (
-            <div className="space-y-4">
-              <div className="max-w-md">
-                <Select
-                  label="Target Competition / Event"
-                  value={selectedEventId}
-                  onChange={(e) => setSelectedEventId(e.target.value)}
-                  options={events.map((evt) => ({ value: evt.id, label: `${evt.name} (${evt.eventDate})` }))}
+      {/* STEP 1: Event & Template Configuration */}
+      {currentStep === 1 && (
+        <Card>
+          <CardHeader
+            title="Configure Issuance Target & Visual Layout"
+            subtitle="Select the event, award category, published template, and authorized signatories to apply to the batch."
+          />
+          <CardContent className="space-y-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Select
+                label="Event / Competition"
+                value={selectedEventId}
+                onChange={(e) => setSelectedEventId(e.target.value)}
+                options={events.map((evt) => ({ value: evt.id, label: `${evt.name} (${evt.eventDate || 'Ongoing'})` }))}
+                required
+              />
+
+              <Select
+                label="Default Award Category"
+                value={selectedCategoryId}
+                onChange={(e) => setSelectedCategoryId(e.target.value)}
+                options={
+                  categories.length > 0
+                    ? categories.map((c) => ({ value: c.id, label: c.name }))
+                    : [{ value: '', label: 'No award categories configured' }]
+                }
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Select
+                label="Published Visual Template"
+                value={selectedTemplateId}
+                onChange={(e) => setSelectedTemplateId(e.target.value)}
+                options={templates.map((tpl) => ({
+                  value: tpl.id,
+                  label: `${tpl.name} (v${tpl.versionNumber} • ${tpl.orientation})`,
+                }))}
+                required
+              />
+
+              <div>
+                <label className="block text-xs font-medium text-neutral-main mb-1">Issue Date</label>
+                <input
+                  type="date"
+                  value={defaultIssueDate}
+                  onChange={(e) => setDefaultIssueDate(e.target.value)}
+                  className="w-full rounded-md border border-neutral-subtle bg-white px-3 py-2 text-xs text-neutral-main"
                 />
               </div>
+            </div>
 
-              <div className="border-2 border-dashed border-neutral-subtle rounded-xl p-8 sm:p-12 text-center bg-neutral-surface/30 space-y-3">
-                <FileSpreadsheet className="w-10 h-10 text-brand-violet mx-auto" />
-                <div className="space-y-1">
-                  <h3 className="text-sm font-semibold text-neutral-main">Upload Recipient Spreadsheet</h3>
-                  <p className="text-xs text-neutral-secondary max-w-sm mx-auto">
-                    Supported columns: <code>recipient_name</code>, <code>recipient_email</code>, <code>award_category</code>, <code>achievement</code>
+            {/* Signatory Selection */}
+            <div>
+              <label className="block text-xs font-medium text-neutral-main mb-1">
+                Authorized Signatories ({selectedSignatoryIds.length} selected)
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-36 overflow-y-auto p-1 bg-white border border-neutral-subtle rounded-lg">
+                {signatories.map((sig) => {
+                  const isSelected = selectedSignatoryIds.includes(sig.id);
+                  const order = selectedSignatoryIds.indexOf(sig.id) + 1;
+                  return (
+                    <div
+                      key={sig.id}
+                      onClick={() => {
+                        setSelectedSignatoryIds((prev) =>
+                          prev.includes(sig.id) ? prev.filter((id) => id !== sig.id) : [...prev, sig.id]
+                        );
+                      }}
+                      className={`p-2 rounded border cursor-pointer transition-colors flex items-center justify-between text-xs ${
+                        isSelected ? 'border-brand-violet bg-brand-violet/5' : 'border-neutral-subtle hover:bg-neutral-surface'
+                      }`}
+                    >
+                      <div className="truncate pr-2">
+                        <span className="font-semibold text-neutral-main block truncate">{sig.name}</span>
+                        <span className="text-[10px] text-neutral-secondary truncate block">{sig.designation}</span>
+                      </div>
+                      {isSelected ? (
+                        <span className="w-5 h-5 rounded-full bg-brand-violet text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                          {order}
+                        </span>
+                      ) : (
+                        <div className="w-4 h-4 rounded border border-neutral-subtle shrink-0" />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-neutral-subtle flex justify-end">
+              <Button
+                variant="primary"
+                size="sm"
+                rightIcon={<ArrowRight className="w-4 h-4" />}
+                onClick={() => setCurrentStep(2)}
+                disabled={!selectedEventId || !selectedTemplateId || selectedSignatoryIds.length === 0}
+              >
+                Continue to Upload CSV
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* STEP 2: CSV Upload */}
+      {currentStep === 2 && (
+        <Card>
+          <CardHeader
+            title="Upload Recipient Spreadsheet"
+            subtitle="Upload a UTF-8 encoded CSV file. Maximum 500 rows per batch recommended."
+          />
+          <CardContent className="space-y-4 text-xs">
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-neutral-subtle hover:border-brand-violet rounded-xl p-8 text-center cursor-pointer transition-colors bg-neutral-surface/20 hover:bg-brand-violet/5 space-y-3"
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              <div className="w-12 h-12 bg-brand-violet/10 text-brand-violet rounded-full flex items-center justify-center mx-auto">
+                <UploadCloud className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-sm font-bold text-neutral-main block">Click to select or drag CSV file here</span>
+                <span className="text-xs text-neutral-secondary mt-1 block">Supports UTF-8 characters, commas within quotes, and special symbols</span>
+              </div>
+            </div>
+
+            {/* CSV Template Guidance */}
+            <div className="p-3 bg-neutral-surface/60 rounded-lg border border-neutral-subtle space-y-1.5 text-xs text-neutral-secondary">
+              <span className="font-semibold text-neutral-main block">Sample CSV Format:</span>
+              <pre className="bg-white p-2 rounded border border-neutral-subtle font-mono text-[11px] overflow-x-auto text-neutral-main">
+                name,email,achievement{'\n'}
+                Priyanshu Sharma,21f1000001@study.iitm.ac.in,First Place in Machine Learning{'\n'}
+                Ananya Raman,21f1000002@study.iitm.ac.in,Runner Up{'\n'}
+                Karthik Venkatesh,21f1000003@study.iitm.ac.in,Participation
+              </pre>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* STEP 3: Column Mapping & Pre-Flight Validation */}
+      {currentStep === 3 && (
+        <Card>
+          <CardHeader
+            title="Map Columns & Validate Rows"
+            subtitle={
+              <span>
+                File: <strong className="font-mono text-neutral-main">{csvFile?.name}</strong> • Found {rows.length} rows
+              </span>
+            }
+            action={
+              <div className="flex items-center gap-2">
+                <Badge variant={invalidRows.length === 0 ? 'success' : 'error'} size="md">
+                  {validRows.length} Valid / {invalidRows.length} Invalid
+                </Badge>
+                {invalidRows.length > 0 && (
+                  <Button variant="outline" size="sm" onClick={handleExcludeAllInvalid}>
+                    Exclude Invalid Rows
+                  </Button>
+                )}
+              </div>
+            }
+          />
+          <CardContent className="space-y-4 text-xs">
+            {/* Column Mapping Selectors */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-neutral-surface/40 rounded-lg border border-neutral-subtle">
+              <Select
+                label="Recipient Name Column *"
+                value={nameColumn}
+                onChange={(e) => setNameColumn(e.target.value)}
+                options={csvHeaders.map((h) => ({ value: h, label: h }))}
+                required
+              />
+
+              <Select
+                label="Recipient Email Column (Optional)"
+                value={emailColumn}
+                onChange={(e) => setEmailColumn(e.target.value)}
+                options={[{ value: '', label: '-- None / Skip --' }, ...csvHeaders.map((h) => ({ value: h, label: h }))]}
+              />
+
+              <Select
+                label="Achievement / Award Column"
+                value={achievementColumn}
+                onChange={(e) => setAchievementColumn(e.target.value)}
+                options={[{ value: '', label: '-- Use Default Category --' }, ...csvHeaders.map((h) => ({ value: h, label: h }))]}
+              />
+            </div>
+
+            {/* Smart Citation Assistant Banner */}
+            <div className="p-3 bg-brand-violet/5 rounded-lg border border-brand-violet/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <span className="font-semibold text-brand-violet flex items-center gap-1.5 text-xs">
+                  <Sparkles className="w-3.5 h-3.5 text-brand-violet" /> Auto-Citation Generator Active
+                </span>
+                <p className="text-[11px] text-neutral-secondary mt-0.5">
+                  Short standing labels in CSV (e.g. "1st", "Winner", "Second", "Participant") are automatically expanded into formal academic descriptions.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {DESCRIPTION_PRESETS.map((p) => (
+                  <span key={p.id} className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${p.colorClass}`}>
+                    {p.badge}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Parsed Rows Preview Table */}
+            <div className="border border-neutral-subtle rounded-lg overflow-hidden">
+              <div className="max-h-80 overflow-y-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-neutral-surface text-neutral-secondary uppercase tracking-wider text-[10px] font-semibold sticky top-0 border-b border-neutral-subtle">
+                    <tr>
+                      <th className="py-2.5 px-3 w-12 text-center">Row</th>
+                      <th className="py-2.5 px-3">Recipient Name</th>
+                      <th className="py-2.5 px-3">Email</th>
+                      <th className="py-2.5 px-3">Achievement</th>
+                      <th className="py-2.5 px-3 text-center">Status</th>
+                      <th className="py-2.5 px-3 text-right">Exclude</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-subtle font-mono text-[11px]">
+                    {rows.map((row) => (
+                      <tr
+                        key={row.index}
+                        className={`transition-colors ${
+                          row.isExcluded
+                            ? 'bg-neutral-surface/40 opacity-50'
+                            : row.isValid
+                            ? 'hover:bg-neutral-surface/20'
+                            : 'bg-rose-50/40 hover:bg-rose-50/70'
+                        }`}
+                      >
+                        <td className="py-2 px-3 text-center text-neutral-secondary">{row.index}</td>
+                        <td className="py-2 px-3 font-sans font-semibold text-neutral-main">
+                          {row.recipientName || <span className="text-rose-600 italic">Missing Name</span>}
+                        </td>
+                        <td className="py-2 px-3 text-neutral-secondary">{row.recipientEmail || '-'}</td>
+                        <td className="py-2 px-3 font-sans text-neutral-main">{row.achievement}</td>
+                        <td className="py-2 px-3 text-center font-sans">
+                          {row.isValid ? (
+                            <Badge variant="success" size="sm">
+                              Valid
+                            </Badge>
+                          ) : (
+                            <span title={row.errors.join(', ')}>
+                              <Badge variant="error" size="sm">
+                                {row.errors[0]}
+                              </Badge>
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleExclude(row.index)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                              row.isExcluded
+                                ? 'bg-neutral-surface border-neutral-subtle text-neutral-secondary'
+                                : 'bg-white border-neutral-subtle text-neutral-main hover:bg-neutral-surface'
+                            }`}
+                          >
+                            {row.isExcluded ? 'Include' : 'Exclude'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Validation Notice & Proceed */}
+            <div className="pt-3 border-t border-neutral-subtle flex flex-col sm:flex-row items-center justify-between gap-3">
+              <span className="text-neutral-secondary text-xs">
+                Ready to issue <strong className="text-emerald-700">{validRows.length}</strong> valid certificates.
+                {invalidRows.length > 0 && ` (${invalidRows.length} invalid rows detected)`}
+              </span>
+
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setCurrentStep(2)}>
+                  Back
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={validRows.length === 0}
+                  onClick={handleExecuteBatch}
+                  rightIcon={<ArrowRight className="w-4 h-4" />}
+                >
+                  Confirm & Issue {validRows.length} Certificates
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* STEP 4: Processing Progress & Completion ZIP Download */}
+      {currentStep === 4 && (
+        <Card>
+          <CardHeader
+            title={isProcessing ? 'Issuing Certificates & Packaging Archive...' : 'Batch Issuance Complete'}
+            subtitle="Authoritative PostgreSQL commits and high-precision PDF document rendering"
+          />
+          <CardContent className="space-y-6 text-xs">
+            {/* Progress Bar */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs font-semibold">
+                <span className="text-neutral-main">
+                  Progress: {processedCount} / {validRows.length} ({Math.round((processedCount / (validRows.length || 1)) * 100)}%)
+                </span>
+                <span className="text-neutral-secondary">
+                  Success: <strong className="text-emerald-600">{successCount}</strong> • Failed: <strong className="text-rose-600">{failureCount}</strong>
+                </span>
+              </div>
+              <div className="w-full h-3 rounded-full bg-neutral-surface overflow-hidden border border-neutral-subtle">
+                <div
+                  className="h-full bg-brand-violet transition-all duration-300"
+                  style={{ width: `${Math.round((processedCount / (validRows.length || 1)) * 100)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* ZIP Download Card */}
+            {!isProcessing && zipBlob && (
+              <div className="p-5 bg-emerald-50 rounded-xl border border-emerald-200 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center mx-auto shadow-xs">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-emerald-900">
+                    {successCount} Certificates Successfully Issued & Packaged
+                  </h3>
+                  <p className="text-xs text-emerald-800/80 mt-1">
+                    All records committed to PostgreSQL registry. Ready to download ZIP archive.
                   </p>
                 </div>
                 <div className="pt-2">
                   <Button
                     variant="primary"
                     size="md"
-                    onClick={handleSimulateUpload}
-                    leftIcon={<UploadCloud className="w-4 h-4" />}
+                    isLoading={isZipping}
+                    leftIcon={<Download className="w-4 h-4" />}
+                    onClick={handleDownloadZip}
                   >
-                    Select Sample CSV File
+                    Download Certificates ZIP ({successCount} PDFs)
                   </Button>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* STEP 2: MAP & VALIDATE */}
-          {currentStep === 2 && (
-            <div className="space-y-4 text-xs">
-              <div className="p-3 bg-brand-violet-light/50 border border-brand-violet/20 rounded-md flex items-center justify-between">
-                <span className="font-semibold text-brand-midnight">Uploaded File: {uploadedFileName}</span>
-                <span className="font-mono text-neutral-secondary">5 rows parsed</span>
-              </div>
-
-              <div>
-                <h4 className="font-semibold uppercase tracking-wider text-neutral-secondary text-[11px] mb-2">
-                  Row Validation Report
-                </h4>
-                <div className="border border-neutral-subtle rounded-md overflow-hidden">
-                  <table className="w-full text-left">
-                    <thead className="bg-neutral-surface text-[11px] text-neutral-secondary uppercase border-b border-neutral-subtle">
-                      <tr>
-                        <th className="py-2 px-3">Row</th>
-                        <th className="py-2 px-3">Name</th>
-                        <th className="py-2 px-3">Category</th>
-                        <th className="py-2 px-3">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-subtle">
-                      {simulatedRows.map((r) => (
-                        <tr key={r.row} className={r.status === 'error' ? 'bg-[#FBE5E5]/30' : ''}>
-                          <td className="py-2 px-3 font-mono">{r.row}</td>
-                          <td className="py-2 px-3 font-medium">{r.name || '<Empty>'}</td>
-                          <td className="py-2 px-3">{r.category}</td>
-                          <td className="py-2 px-3">
-                            {r.status === 'valid' ? (
-                              <Badge variant="success" size="sm">Valid</Badge>
+            {/* Completed Rows Table */}
+            <div>
+              <span className="font-semibold text-neutral-main text-xs block mb-2">Issued Batch Summary:</span>
+              <div className="border border-neutral-subtle rounded-lg max-h-60 overflow-y-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-neutral-surface text-neutral-secondary uppercase tracking-wider text-[10px] font-semibold sticky top-0 border-b border-neutral-subtle">
+                    <tr>
+                      <th className="py-2 px-3">Recipient</th>
+                      <th className="py-2 px-3">Achievement</th>
+                      <th className="py-2 px-3">Code</th>
+                      <th className="py-2 px-3 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-subtle font-mono text-[11px]">
+                    {rows
+                      .filter((r) => !r.isExcluded)
+                      .map((r) => (
+                        <tr key={r.index} className="hover:bg-neutral-surface/20">
+                          <td className="py-2 px-3 font-sans font-semibold text-neutral-main">{r.recipientName}</td>
+                          <td className="py-2 px-3 font-sans text-neutral-secondary">{r.achievement}</td>
+                          <td className="py-2 px-3 font-mono font-bold text-brand-midnight">
+                            {r.issuedCert?.verificationCode || '-'}
+                          </td>
+                          <td className="py-2 px-3 text-center font-sans">
+                            {r.issuedCert ? (
+                              <Badge variant="success" size="sm">
+                                Issued
+                              </Badge>
                             ) : (
-                              <span className="text-[#A52A2A] font-semibold text-[11px]">{r.error}</span>
+                              <Badge variant="error" size="sm">
+                                {r.errors[0] || 'Failed'}
+                              </Badge>
                             )}
                           </td>
                         </tr>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="flex justify-between items-center pt-2">
-                <Button variant="outline" size="sm" onClick={handleReset}>
-                  Cancel / Re-upload
-                </Button>
-                <Button variant="primary" size="sm" onClick={handleSimulateValidate} rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
-                  Proceed with 3 Valid Rows
-                </Button>
+                  </tbody>
+                </table>
               </div>
             </div>
-          )}
+          </CardContent>
+        </Card>
+      )}
 
-          {/* STEP 3: CONFIRM BATCH */}
-          {currentStep === 3 && (
-            <div className="space-y-4 text-xs">
-              <div className="p-4 bg-neutral-surface rounded-lg border border-neutral-subtle space-y-2">
-                <h4 className="text-sm font-semibold text-neutral-main">Pre-Issuance Confirmation Summary</h4>
-                <ul className="space-y-1 text-neutral-secondary list-disc pl-5">
-                  <li>3 valid certificates will be allocated unique 6-digit codes.</li>
-                  <li>Database records will be committed atomically to Namdapha registry.</li>
-                  <li>2 invalid rows will be excluded and logged in the batch report.</li>
-                </ul>
-              </div>
-
-              <div className="flex justify-between items-center pt-2">
-                <Button variant="outline" size="sm" onClick={() => setCurrentStep(2)}>
-                  Back
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  isLoading={isProcessing}
-                  onClick={handleSimulateConfirm}
-                >
-                  Confirm & Commit 3 Certificates
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 4: DOWNLOAD RESULTS */}
-          {currentStep === 4 && (
-            <div className="text-center py-6 space-y-4">
-              <div className="w-12 h-12 rounded-full bg-[#E2F4E9] text-[#17653C] flex items-center justify-center mx-auto">
-                <CheckCircle2 className="w-7 h-7" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-lg font-bold text-neutral-main">Batch Processing Completed</h3>
-                <p className="text-xs text-neutral-secondary max-w-sm mx-auto">
-                  3 certificates were successfully committed to the database. All PDFs have been packaged.
-                </p>
-              </div>
-
-              <div className="flex justify-center gap-3 pt-2">
-                <Button
-                  variant="primary"
-                  size="md"
-                  leftIcon={<Download className="w-4 h-4" />}
-                  onClick={() => alert('ZIP download demonstration. In Milestone 7, this triggers JSZip creation with all generated certificates.')}
-                >
-                  Download Certificates (ZIP)
-                </Button>
-                <Button variant="outline" size="md" onClick={handleReset}>
-                  Start Another Batch
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* History of Import Batches */}
-      <Card>
-        <CardHeader
-          title="Past Issuance Batches"
-          subtitle="Audit ledger of spreadsheet imports and row fulfillment status"
-        />
-        <div className="divide-y divide-neutral-subtle">
-          {batches.map((batch) => (
-            <div key={batch.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <div className="space-y-1">
-                <div className="flex items-center space-x-2">
-                  <span className="font-semibold text-sm text-neutral-main">{batch.eventName}</span>
-                  <Badge variant={batch.status === 'completed' ? 'success' : 'pending'} size="sm">
-                    {batch.status.replace('_', ' ')}
-                  </Badge>
-                </div>
-                <div className="text-neutral-secondary font-mono flex flex-wrap gap-x-3 text-[11px]">
-                  <span>File: {batch.originalFilename}</span>
-                  <span>Total: {batch.totalRows}</span>
-                  <span>Issued: {batch.issuedCount}</span>
-                  {batch.failedCount > 0 && <span className="text-[#A52A2A]">Failed: {batch.failedCount}</span>}
-                </div>
-              </div>
-
-              <div className="sm:text-right text-neutral-secondary shrink-0">
-                <span>By {batch.createdByName}</span>
-                <span className="block text-[11px] text-neutral-secondary/80">
-                  {new Date(batch.createdAt).toLocaleDateString()}
-                </span>
-              </div>
-            </div>
-          ))}
+      {/* Historical Batches Section */}
+      <div className="space-y-3 pt-6 border-t border-neutral-subtle">
+        <h2 className="text-base font-bold text-neutral-main">Historical Issuance Batches</h2>
+        <div className="overflow-x-auto border border-neutral-subtle rounded-lg bg-white">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-neutral-surface/60 text-neutral-secondary uppercase tracking-wider text-[11px] font-semibold border-b border-neutral-subtle">
+              <tr>
+                <th className="py-3 px-4">Created Date</th>
+                <th className="py-3 px-4">Original File</th>
+                <th className="py-3 px-4">Event</th>
+                <th className="py-3 px-4 text-center">Total Rows</th>
+                <th className="py-3 px-4 text-center">Issued / Failed</th>
+                <th className="py-3 px-4 text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-subtle font-mono text-[11px]">
+              {batches.map((b) => (
+                <tr key={b.id} className="hover:bg-neutral-surface/30">
+                  <td className="py-3 px-4 text-neutral-secondary">{new Date(b.createdAt).toLocaleDateString()}</td>
+                  <td className="py-3 px-4 font-sans font-semibold text-neutral-main">{b.originalFilename}</td>
+                  <td className="py-3 px-4 font-sans text-neutral-secondary">{b.eventName}</td>
+                  <td className="py-3 px-4 text-center font-semibold text-neutral-main">{b.totalRows}</td>
+                  <td className="py-3 px-4 text-center font-sans">
+                    <span className="text-emerald-700 font-semibold">{b.issuedCount}</span>
+                    <span className="text-neutral-secondary"> / </span>
+                    <span className={b.failedCount > 0 ? 'text-rose-600 font-semibold' : 'text-neutral-secondary'}>
+                      {b.failedCount}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-center font-sans">
+                    <Badge
+                      variant={
+                        b.status === 'completed'
+                          ? 'success'
+                          : b.status === 'processing'
+                          ? 'info'
+                          : b.status === 'partially_completed'
+                          ? 'pending'
+                          : 'error'
+                      }
+                      size="sm"
+                    >
+                      {b.status}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      </Card>
+      </div>
     </div>
   );
 };
