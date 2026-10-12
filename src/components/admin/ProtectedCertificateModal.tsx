@@ -53,6 +53,13 @@ function wrapCanvasText(
   return lines.length > 0 ? lines : [text];
 }
 
+/**
+ * Protected Certificate Preview Modal
+ *
+ * Renders sample certificates onto a high-DPI HTML5 raster canvas rather than
+ * exposing direct image URLs. Features dual-layer indelible watermarks, code suppression,
+ * right-click and keyboard print/save interceptors.
+ */
 export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps> = ({
   isOpen,
   onClose,
