@@ -40,6 +40,12 @@ interface ParsedRow {
   issuedCert?: Certificate;
 }
 
+/**
+ * Bulk Certificate Issuance Page
+ *
+ * Implements PapaParse CSV file streaming, row-level schema validation,
+ * transactional PostgreSQL batch insertion, and JSZip multi-PDF download bundling.
+ */
 export const BulkIssuePage: React.FC = () => {
   const [batches, setBatches] = useState<IssuanceBatch[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
