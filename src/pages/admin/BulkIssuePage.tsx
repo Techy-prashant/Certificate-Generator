@@ -781,7 +781,11 @@ export const BulkIssuePage: React.FC = () => {
 
             {/* ZIP Download Card */}
             {!isProcessing && zipBlob && (
-              <div className="p-5 bg-emerald-50 rounded-xl border border-emerald-200 text-center space-y-3">
+              <div
+                role="status"
+                aria-live="polite"
+                className="p-5 bg-emerald-50 rounded-xl border border-emerald-200 text-center space-y-3"
+              >
                 <div className="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center mx-auto shadow-xs">
                   <CheckCircle2 className="w-6 h-6" />
                 </div>
