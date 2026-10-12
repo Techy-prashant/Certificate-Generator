@@ -23,12 +23,6 @@ export const LandingPage: React.FC = () => {
     navigate(`/verify/${cleanCode}`);
   };
 
-  const sampleCodes = [
-    { label: 'Valid Award (Hackathon Winner)', code: '889124' },
-    { label: 'Valid Award (Debate Speaker)', code: '102948' },
-    { label: 'Revoked Certificate (Audit)', code: '772109' },
-  ];
-
   return (
     <div className="flex-1 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto w-full space-y-12">
@@ -91,30 +85,6 @@ export const LandingPage: React.FC = () => {
               Verify Certificate
             </Button>
           </form>
-
-          {/* Quick Demo Test Codes */}
-          <div className="pt-4 border-t border-neutral-subtle space-y-2">
-            <span className="text-[11px] font-semibold text-neutral-secondary uppercase tracking-wider block text-center">
-              Sample Codes
-            </span>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {sampleCodes.map((s) => (
-                <button
-                  key={s.code}
-                  type="button"
-                  onClick={() => {
-                    setCode(s.code);
-                    setError('');
-                  }}
-                  className="text-xs px-2.5 py-1 rounded-lg bg-neutral-surface hover:bg-brand-violet-light hover:text-brand-midnight border border-neutral-subtle font-mono text-neutral-main transition-colors flex items-center gap-1.5"
-                  title={s.label}
-                >
-                  <span className="font-semibold">{s.code}</span>
-                  <span className="text-[10px] text-neutral-secondary">({s.code === '772109' ? 'Revoked' : 'Valid'})</span>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </div>
