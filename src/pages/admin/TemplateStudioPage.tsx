@@ -631,6 +631,7 @@ export const TemplateStudioPage: React.FC = () => {
               onClick={() => setZoomLevel((z) => Math.max(35, z - 10))}
               className="p-1 hover:bg-white rounded transition-colors text-neutral-secondary hover:text-neutral-main"
               title="Zoom Out"
+              aria-label="Zoom Out"
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
@@ -639,6 +640,7 @@ export const TemplateStudioPage: React.FC = () => {
               onClick={() => setZoomLevel((z) => Math.min(200, z + 10))}
               className="p-1 hover:bg-white rounded transition-colors text-neutral-secondary hover:text-neutral-main"
               title="Zoom In"
+              aria-label="Zoom In"
             >
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
@@ -646,6 +648,7 @@ export const TemplateStudioPage: React.FC = () => {
               onClick={fitToScreen}
               className="px-1.5 py-0.5 hover:bg-white rounded transition-colors text-[10px] font-semibold text-brand-violet hover:text-brand-midnight border-l border-neutral-subtle/80 ml-0.5"
               title="Fit to Screen (Auto-Scale)"
+              aria-label="Fit to Screen"
             >
               Fit
             </button>
@@ -653,6 +656,7 @@ export const TemplateStudioPage: React.FC = () => {
               onClick={() => setZoomLevel(100)}
               className="px-1.5 py-0.5 hover:bg-white rounded transition-colors text-[10px] font-mono text-neutral-secondary hover:text-neutral-main border-l border-neutral-subtle/80 ml-0.5"
               title="Actual 100% Size"
+              aria-label="Actual 100% Size"
             >
               100%
             </button>
@@ -667,6 +671,7 @@ export const TemplateStudioPage: React.FC = () => {
                 : 'border-neutral-subtle bg-white text-neutral-secondary hover:bg-neutral-surface'
             }`}
             title="Toggle Millimeter Snap Grid"
+            aria-label="Toggle Millimeter Snap Grid"
           >
             <Grid className="w-3.5 h-3.5" />
             <span className="text-[11px]">Snap Grid</span>
@@ -677,6 +682,7 @@ export const TemplateStudioPage: React.FC = () => {
             <button
               onClick={handleUndo}
               disabled={historyIndex <= 0}
+              aria-label="Undo canvas change"
               className="p-1.5 text-neutral-secondary hover:text-neutral-main disabled:opacity-30 rounded hover:bg-neutral-surface"
               title="Undo"
             >
