@@ -42,9 +42,11 @@ export const AdminSidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       {/* Brand Header */}
       <div className="p-5 border-b border-neutral-subtle flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded-lg bg-brand-midnight flex items-center justify-center text-brand-gold shadow-xs shrink-0 font-bold text-sm tracking-widest border border-brand-gold/30">
-            N
-          </div>
+          <img
+            src="/logo/Namdapha_bg_colored_rect.png"
+            alt="Namdapha House Logo"
+            className="h-10 w-auto max-w-[125px] rounded-xl object-contain shrink-0 shadow-2xs"
+          />
           <div>
             <span className="font-bold tracking-tight text-brand-midnight text-sm block uppercase">
               Namdapha

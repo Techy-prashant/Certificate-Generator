@@ -13,7 +13,9 @@ import { VerifyPage } from './pages/public/VerifyPage';
 import { LoginPage } from './pages/admin/LoginPage';
 import { DashboardPage } from './pages/admin/DashboardPage';
 import { EventsPage } from './pages/admin/EventsPage';
+import { EventDetailPage } from './pages/admin/EventDetailPage';
 import { TemplatesPage } from './pages/admin/TemplatesPage';
+import { TemplateStudioPage } from './pages/admin/TemplateStudioPage';
 import { SignatoriesPage } from './pages/admin/SignatoriesPage';
 import { CertificatesPage } from './pages/admin/CertificatesPage';
 import { BulkIssuePage } from './pages/admin/BulkIssuePage';
@@ -23,9 +25,11 @@ import { AuditPage } from './pages/admin/AuditPage';
 // 404 Fallback
 const NotFoundPage: React.FC = () => (
   <div className="min-h-screen bg-brand-ivory flex flex-col items-center justify-center p-6 text-center space-y-4">
-    <div className="w-12 h-12 rounded-xl bg-brand-midnight text-brand-gold flex items-center justify-center font-bold text-lg">
-      N
-    </div>
+    <img
+      src="/logo/Namdapha_bg_colored_rect.png"
+      alt="Namdapha House Logo"
+      className="h-14 w-auto max-w-[180px] rounded-2xl object-contain shadow-xs"
+    />
     <h1 className="text-2xl font-bold text-neutral-main">Page Not Found</h1>
     <p className="text-xs text-neutral-secondary max-w-sm">
       The requested route does not exist in the Namdapha Certificate Portal.
@@ -73,7 +77,9 @@ export const App: React.FC = () => {
           >
             <Route index element={<DashboardPage />} />
             <Route path="events" element={<EventsPage />} />
+            <Route path="events/:id" element={<EventDetailPage />} />
             <Route path="templates" element={<TemplatesPage />} />
+            <Route path="templates/:id/studio" element={<TemplateStudioPage />} />
             <Route path="signatories" element={<SignatoriesPage />} />
             <Route path="certificates" element={<CertificatesPage />} />
             <Route path="bulk-issue" element={<BulkIssuePage />} />

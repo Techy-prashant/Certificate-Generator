@@ -49,9 +49,11 @@ export const LoginPage: React.FC = () => {
         {/* Brand Card Header */}
         <div className="bg-white rounded-xl shadow-md border border-neutral-subtle p-6 sm:p-8 space-y-6">
           <div className="text-center space-y-2">
-            <div className="w-12 h-12 rounded-xl bg-brand-midnight text-brand-gold flex items-center justify-center font-bold text-lg mx-auto border border-brand-gold/30 shadow-xs">
-              N
-            </div>
+            <img
+              src="/logo/Namdapha_bg_colored_rect.png"
+              alt="Namdapha House Logo"
+              className="h-16 w-auto max-w-[220px] rounded-2xl object-contain mx-auto drop-shadow-sm"
+            />
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-main">
               Namdapha Admin Portal
             </h1>

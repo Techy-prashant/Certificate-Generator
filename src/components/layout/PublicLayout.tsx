@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, Link } from 'react-router-dom';
-import { ShieldCheck, LogIn } from 'lucide-react';
+import { LogIn } from 'lucide-react';
 import { DemoDataBanner } from '../ui/DemoDataBanner';
 
 export const PublicLayout: React.FC = () => {
@@ -12,9 +12,11 @@ export const PublicLayout: React.FC = () => {
       <header className="bg-white border-b border-neutral-subtle sticky top-0 z-20 shadow-2xs">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center space-x-3 group">
-            <div className="w-9 h-9 rounded-lg bg-brand-midnight text-brand-gold flex items-center justify-center font-bold text-sm border border-brand-gold/30 shadow-xs group-hover:scale-102 transition-transform">
-              N
-            </div>
+            <img
+              src="/logo/Namdapha_bg_colored_rect.png"
+              alt="Namdapha House Logo"
+              className="h-10 w-auto max-w-[125px] rounded-xl object-contain shrink-0 group-hover:scale-105 transition-transform shadow-2xs"
+            />
             <div>
               <span className="font-bold tracking-tight text-brand-midnight text-sm block leading-tight">
                 Namdapha House
@@ -42,19 +44,14 @@ export const PublicLayout: React.FC = () => {
         <Outlet />
       </main>
 
-      {/* Public Institutional Footer */}
-      <footer className="bg-white border-t border-neutral-subtle py-8 text-center text-xs text-neutral-secondary">
-        <div className="max-w-4xl mx-auto px-4 space-y-2">
-          <div className="flex items-center justify-center space-x-2 text-neutral-main font-semibold">
-            <ShieldCheck className="w-4 h-4 text-brand-violet" />
-            <span>Official Certificate Verification Portal</span>
-          </div>
-          <p className="max-w-xl mx-auto text-neutral-secondary/80">
-            Maintained by Namdapha House student administration for IIT Madras BS Degree Programme.
-            All verification records are matched cryptographically against official registry records.
+      {/* Minimal Public Institutional Footer */}
+      <footer className="border-t border-neutral-subtle/60 py-6 text-center text-xs text-neutral-secondary bg-white/40">
+        <div className="max-w-4xl mx-auto px-4 space-y-1">
+          <p className="font-medium text-neutral-main">
+            Namdapha House • IIT Madras BS Degree Programme
           </p>
-          <div className="pt-2 text-[11px] text-neutral-secondary/60">
-            © 2026 Namdapha House, IIT Madras BS. All rights reserved.
+          <div className="text-[11px] text-neutral-secondary/60">
+            © 2026 Namdapha Certificate Registry • All rights reserved
           </div>
         </div>
       </footer>
