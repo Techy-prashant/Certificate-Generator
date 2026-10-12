@@ -132,7 +132,11 @@ export const VerifyPage: React.FC = () => {
 
         {/* Outcome 1: VALID */}
         {!isRateLimited && result?.isValid && result.status === 'issued' && (
-          <div className="bg-white rounded-xl shadow-md border border-neutral-subtle overflow-hidden">
+          <div
+            role="region"
+            aria-label="Verified Certificate Details"
+            className="bg-white rounded-xl shadow-md border border-neutral-subtle overflow-hidden"
+          >
             {/* Status Header */}
             <div className="bg-[#E2F4E9] border-b border-[#A3D9B8] p-5 sm:p-6 text-center space-y-2">
               <div className="w-12 h-12 rounded-full bg-[#17653C] text-white flex items-center justify-center mx-auto shadow-xs">
