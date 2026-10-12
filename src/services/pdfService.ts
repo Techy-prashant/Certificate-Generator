@@ -94,7 +94,12 @@ function wrapText(text: string, font: PDFFont, fontSize: number, maxWidth: numbe
 
 export class CertificatePdfEngine {
   /**
-   * Generates a verifiable, high-precision PDF document from a template and certificate data.
+   * Generates a verifiable, high-precision vector PDF document from a template configuration and certificate payload.
+   *
+   * @param template - Active template schema including orientation, dimensions, and element coordinates
+   * @param data - Recipient, event, 6-digit verification code, and signatory details to stamp
+   * @returns Binary Uint8Array representation of the generated PDF document
+   * @throws Will throw if font embedding or document creation fails critically
    */
   async generateCertificatePdf(
     template: Template,
