@@ -55,6 +55,7 @@ export const Modal: React.FC<ModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-midnight/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
+      aria-labelledby="modal-title"
     >
       <div
         className="fixed inset-0"
@@ -67,7 +68,7 @@ export const Modal: React.FC<ModalProps> = ({
       >
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-neutral-subtle">
           <div>
-            <h2 className="text-base sm:text-lg font-semibold text-neutral-main">{title}</h2>
+            <h2 id="modal-title" className="text-base sm:text-lg font-semibold text-neutral-main">{title}</h2>
             {description && <p className="text-xs sm:text-sm text-neutral-secondary mt-0.5">{description}</p>}
           </div>
           <button
