@@ -628,7 +628,8 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
               width: `${zoom}%`,
               maxWidth: zoom > 100 ? 'none' : '100%',
               aspectRatio: `${template.pageWidth} / ${template.pageHeight}`,
-              transition: 'width 0.12s ease-out',
+              transition: 'width 0.12s cubic-bezier(0.4, 0, 0.2, 1)',
+              willChange: 'width',
             }}
             className="relative shadow-2xl rounded-sm overflow-hidden border border-neutral-subtle/80 bg-white select-none shrink-0"
           >
