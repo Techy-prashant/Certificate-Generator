@@ -188,7 +188,7 @@ export const TeamPage: React.FC = () => {
           <div className="p-3 bg-neutral-surface rounded border border-neutral-subtle text-neutral-secondary text-[11px] space-y-1">
             <span className="font-semibold text-neutral-main block">Mandatory Security Rule:</span>
             <p>
-              Per Section 3 of AGENTS.md, public signups are disabled in production; privileges are granted strictly through authorized database policies.
+              Per institutional security policy, public signups are disabled in production; privileges are granted strictly through authorized database policies.
             </p>
           </div>
 
