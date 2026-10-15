@@ -85,6 +85,7 @@ export const BulkIssuePage: React.FC = () => {
   const [zipBlob, setZipBlob] = useState<Blob | null>(null);
   const [isZipping, setIsZipping] = useState(false);
   const [isQuickCreatingCats, setIsQuickCreatingCats] = useState(false);
+  const [customDefaultAchievement, setCustomDefaultAchievement] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -130,6 +131,7 @@ export const BulkIssuePage: React.FC = () => {
     if (!selectedEventId) {
       setCategories([]);
       setSelectedCategoryId('');
+      setCustomDefaultAchievement('');
       return;
     }
     const loadCats = async () => {
@@ -139,13 +141,20 @@ export const BulkIssuePage: React.FC = () => {
           portalService.getEventSignatories(selectedEventId).catch(() => []),
         ]);
         setCategories(cats);
+        const currentEvent = events.find((e) => e.id === selectedEventId);
+
         if (cats.length > 0) {
-          setSelectedCategoryId((prev) => (cats.some((c) => c.id === prev) ? prev : cats[0].id));
+          const initialCatId = cats.some((c) => c.id === selectedCategoryId) ? selectedCategoryId : cats[0].id;
+          setSelectedCategoryId(initialCatId);
+          const activeCat = cats.find((c) => c.id === initialCatId);
+          if (currentEvent && activeCat) {
+            setCustomDefaultAchievement(autoDetectCitation(activeCat.name, currentEvent.name, currentEvent.category));
+          }
         } else {
           setSelectedCategoryId('');
+          setCustomDefaultAchievement('');
         }
 
-        const currentEvent = events.find((e) => e.id === selectedEventId);
         if (currentEvent?.defaultTemplateId) {
           setSelectedTemplateId(currentEvent.defaultTemplateId);
         }
@@ -232,19 +241,19 @@ export const BulkIssuePage: React.FC = () => {
     });
   };
 
-  // Process and re-validate rows whenever column mapping changes
+  // Process and re-validate rows whenever column mapping or default achievement changes
   useEffect(() => {
     if (rawParsedData.length === 0) return;
 
     const currentEvent = events.find((e) => e.id === selectedEventId);
     const categoryName = categories.find((c) => c.id === selectedCategoryId)?.name || 'Certificate of Excellence';
-    const defaultAchievement = autoDetectCitation(categoryName, currentEvent?.name);
+    const fallbackAchievement = customDefaultAchievement.trim() || autoDetectCitation(categoryName, currentEvent?.name, currentEvent?.category);
 
     const processed: ParsedRow[] = rawParsedData.map((raw, idx) => {
       const recipientName = (nameColumn && raw[nameColumn] ? raw[nameColumn] : '').trim();
       const recipientEmail = (emailColumn && raw[emailColumn] ? raw[emailColumn] : '').trim();
-      const rawAchievement = (achievementColumn && raw[achievementColumn] ? raw[achievementColumn] : defaultAchievement).trim();
-      const achievement = autoDetectCitation(rawAchievement, currentEvent?.name);
+      const rawFromCsv = achievementColumn && raw[achievementColumn] ? raw[achievementColumn].trim() : '';
+      const achievement = rawFromCsv ? autoDetectCitation(rawFromCsv, currentEvent?.name, currentEvent?.category) : fallbackAchievement;
 
       const errors: string[] = [];
       if (!recipientName) {
@@ -267,7 +276,22 @@ export const BulkIssuePage: React.FC = () => {
     });
 
     setRows(processed);
-  }, [rawParsedData, nameColumn, emailColumn, achievementColumn, categories, selectedCategoryId, selectedEventId, events]);
+  }, [rawParsedData, nameColumn, emailColumn, achievementColumn, categories, selectedCategoryId, selectedEventId, events, customDefaultAchievement]);
+
+  // Update single row achievement inline
+  const handleUpdateRowAchievement = (index: number, newAchievement: string) => {
+    setRows((prev) =>
+      prev.map((r) => (r.index === index ? { ...r, achievement: newAchievement } : r))
+    );
+  };
+
+  // Bulk apply citation to all rows
+  const handleApplyAchievementToAll = (text: string) => {
+    if (!text.trim()) return;
+    setRows((prev) =>
+      prev.map((r) => ({ ...r, achievement: text.trim() }))
+    );
+  };
 
   // Toggle row exclusion
   const handleToggleExclude = (index: number) => {
@@ -517,7 +541,15 @@ export const BulkIssuePage: React.FC = () => {
                 <Select
                   label="Default Award Category"
                   value={selectedCategoryId}
-                  onChange={(e) => setSelectedCategoryId(e.target.value)}
+                  onChange={(e) => {
+                    const newCatId = e.target.value;
+                    setSelectedCategoryId(newCatId);
+                    const cat = categories.find((c) => c.id === newCatId);
+                    const currentEvent = events.find((ev) => ev.id === selectedEventId);
+                    if (cat && currentEvent) {
+                      setCustomDefaultAchievement(autoDetectCitation(cat.name, currentEvent.name, currentEvent.category));
+                    }
+                  }}
                   options={
                     categories.length > 0
                       ? categories.map((c) => ({ value: c.id, label: c.name }))
@@ -539,6 +571,59 @@ export const BulkIssuePage: React.FC = () => {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Default Achievement / Citation Textarea */}
+            <div className="space-y-2 p-3 bg-neutral-surface/40 rounded-lg border border-neutral-subtle">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-secondary">
+                  Default Achievement / Citation Description <span className="text-[#A52A2A]">*</span>
+                </label>
+                <span className="text-[11px] text-brand-violet font-semibold flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-brand-violet" /> Quick Presets:
+                </span>
+              </div>
+
+              {/* Quick Preset Buttons */}
+              <div className="flex flex-wrap gap-1.5 p-1.5 bg-white rounded-lg border border-neutral-subtle">
+                {DESCRIPTION_PRESETS.map((p) => {
+                  const currentEvent = events.find((e) => e.id === selectedEventId);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setCustomDefaultAchievement(p.generateText(currentEvent?.name, currentEvent?.category))}
+                      className={`px-2 py-0.5 rounded text-[11px] font-semibold border transition-all ${p.colorClass} cursor-pointer`}
+                      title={p.title}
+                    >
+                      {p.badge}
+                    </button>
+                  );
+                })}
+                {events.find((e) => e.id === selectedEventId)?.category === 'Impact' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentEvent = events.find((e) => e.id === selectedEventId);
+                      setCustomDefaultAchievement(`Winning Team (Against the Motion) - First Place in ${currentEvent?.name || 'the debate'}, organized by Namdapha House, IIT Madras.`);
+                    }}
+                    className="px-2 py-0.5 rounded text-[11px] font-semibold border transition-all bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 cursor-pointer"
+                  >
+                    🗣️ Winning Team (Against the Motion)
+                  </button>
+                )}
+              </div>
+
+              <textarea
+                rows={2}
+                value={customDefaultAchievement}
+                onChange={(e) => setCustomDefaultAchievement(e.target.value)}
+                placeholder="In recognition of outstanding achievement..."
+                className="w-full text-xs p-2.5 rounded-md border border-neutral-subtle bg-white text-neutral-main focus-visible:outline-2 focus-visible:outline-brand-violet transition-colors resize-y"
+              />
+              <p className="text-[11px] text-neutral-secondary">
+                💡 This citation is applied by default to all recipients who do not have an achievement specified in the CSV. You can also customize individual citations in Step 3.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -708,22 +793,71 @@ export const BulkIssuePage: React.FC = () => {
               />
             </div>
 
-            {/* Smart Citation Assistant Banner */}
-            <div className="p-3 bg-brand-violet/5 rounded-lg border border-brand-violet/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <span className="font-semibold text-brand-violet flex items-center gap-1.5 text-xs">
-                  <Sparkles className="w-3.5 h-3.5 text-brand-violet" /> Auto-Citation Generator Active
-                </span>
-                <p className="text-[11px] text-neutral-secondary mt-0.5">
-                  Short standing labels in CSV (e.g. "1st", "Winner", "Second", "Participant") are automatically expanded into formal academic descriptions.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {DESCRIPTION_PRESETS.map((p) => (
-                  <span key={p.id} className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${p.colorClass}`}>
-                    {p.badge}
+            {/* Smart Citation Assistant Banner & Batch Quick Edit */}
+            <div className="p-3 bg-brand-violet/5 rounded-lg border border-brand-violet/20 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <span className="font-semibold text-brand-violet flex items-center gap-1.5 text-xs">
+                    <Sparkles className="w-3.5 h-3.5 text-brand-violet" /> Auto-Citation Generator Active
                   </span>
-                ))}
+                  <p className="text-[11px] text-neutral-secondary mt-0.5">
+                    Customize batch citation or edit individual recipient citations directly in the table below.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {DESCRIPTION_PRESETS.map((p) => {
+                    const currentEvent = events.find((e) => e.id === selectedEventId);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          const newText = p.generateText(currentEvent?.name, currentEvent?.category);
+                          setCustomDefaultAchievement(newText);
+                          handleApplyAchievementToAll(newText);
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-all ${p.colorClass} cursor-pointer`}
+                        title={`Apply ${p.title} to all`}
+                      >
+                        {p.badge}
+                      </button>
+                    );
+                  })}
+                  {events.find((e) => e.id === selectedEventId)?.category === 'Impact' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const currentEvent = events.find((e) => e.id === selectedEventId);
+                        const newText = `Winning Team (Against the Motion) - First Place in ${currentEvent?.name || 'the debate'}, organized by Namdapha House, IIT Madras.`;
+                        setCustomDefaultAchievement(newText);
+                        handleApplyAchievementToAll(newText);
+                      }}
+                      className="px-2 py-0.5 rounded text-[10px] font-semibold border transition-all bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 cursor-pointer"
+                    >
+                      🗣️ Winning Team (Against the Motion)
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Batch Custom Citation Input */}
+              <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center pt-1 border-t border-brand-violet/10">
+                <input
+                  type="text"
+                  value={customDefaultAchievement}
+                  onChange={(e) => setCustomDefaultAchievement(e.target.value)}
+                  placeholder="Set custom batch citation to apply..."
+                  className="flex-1 text-xs px-2.5 py-1.5 rounded border border-neutral-subtle bg-white text-neutral-main focus:outline-none focus:ring-1 focus:ring-brand-violet"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleApplyAchievementToAll(customDefaultAchievement)}
+                  disabled={!customDefaultAchievement.trim()}
+                >
+                  Apply Citation to All Rows
+                </Button>
               </div>
             </div>
 
@@ -736,7 +870,7 @@ export const BulkIssuePage: React.FC = () => {
                       <th className="py-2.5 px-3 w-12 text-center">Row</th>
                       <th className="py-2.5 px-3">Recipient Name</th>
                       <th className="py-2.5 px-3">Email</th>
-                      <th className="py-2.5 px-3">Achievement</th>
+                      <th className="py-2.5 px-3 min-w-[280px]">Achievement / Citation</th>
                       <th className="py-2.5 px-3 text-center">Status</th>
                       <th className="py-2.5 px-3 text-right">Exclude</th>
                     </tr>
@@ -758,7 +892,15 @@ export const BulkIssuePage: React.FC = () => {
                           {row.recipientName || <span className="text-rose-600 italic">Missing Name</span>}
                         </td>
                         <td className="py-2 px-3 text-neutral-secondary">{row.recipientEmail || '-'}</td>
-                        <td className="py-2 px-3 font-sans text-neutral-main">{row.achievement}</td>
+                        <td className="py-2 px-3 font-sans text-neutral-main min-w-[280px]">
+                          <textarea
+                            rows={2}
+                            value={row.achievement}
+                            onChange={(e) => handleUpdateRowAchievement(row.index, e.target.value)}
+                            className="w-full text-[11px] p-1.5 border border-neutral-subtle rounded bg-white hover:border-brand-violet focus:border-brand-violet focus:ring-1 focus:ring-brand-violet transition-colors resize-y text-neutral-main"
+                            placeholder="Recipient achievement description..."
+                          />
+                        </td>
                         <td className="py-2 px-3 text-center font-sans">
                           {row.isValid ? (
                             <Badge variant="success" size="sm">

@@ -145,7 +145,7 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
         if (cats.length > 0) {
           setSelectedCategoryId(cats[0].id);
           // Auto achievement text with smart citation
-          setAchievement(autoDetectCitation(cats[0].name, currentEvent?.name));
+          setAchievement(autoDetectCitation(cats[0].name, currentEvent?.name, currentEvent?.category));
           if (cats[0].templateId && templates.some((t) => t.id === cats[0].templateId)) {
             setSelectedTemplateId(cats[0].templateId);
           } else if (currentEvent?.defaultTemplateId && templates.some((t) => t.id === currentEvent.defaultTemplateId)) {
@@ -155,7 +155,7 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
           }
         } else {
           setSelectedCategoryId('');
-          setAchievement(autoDetectCitation('Participation', currentEvent?.name));
+          setAchievement(autoDetectCitation('Participation', currentEvent?.name, currentEvent?.category));
           if (currentEvent?.defaultTemplateId && templates.some((t) => t.id === currentEvent.defaultTemplateId)) {
             setSelectedTemplateId(currentEvent.defaultTemplateId);
           } else if (templates.length > 0) {
@@ -482,7 +482,7 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
                   const cat = categories.find((c) => c.id === newCatId);
                   const currentEvent = events.find((ev) => ev.id === selectedEventId);
                   if (cat) {
-                    setAchievement(autoDetectCitation(cat.name, currentEvent?.name));
+                    setAchievement(autoDetectCitation(cat.name, currentEvent?.name, currentEvent?.category));
                     if (cat.templateId && templates.some((t) => t.id === cat.templateId)) {
                       setSelectedTemplateId(cat.templateId);
                     }
@@ -631,8 +631,8 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
                     key={preset.id}
                     type="button"
                     onClick={() => {
-                      const evtName = events.find((e) => e.id === selectedEventId)?.name;
-                      setAchievement(preset.generateText(evtName));
+                      const currentEvt = events.find((e) => e.id === selectedEventId);
+                      setAchievement(preset.generateText(currentEvt?.name, currentEvt?.category));
                     }}
                     className={`px-2.5 py-1 rounded text-[11px] font-semibold border transition-all shadow-2xs ${preset.colorClass}`}
                     title={`Auto-generate ${preset.title}`}
@@ -640,6 +640,20 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
                     {preset.badge}
                   </button>
                 ))}
+                {/* Contextual Debate Preset */}
+                {events.find((e) => e.id === selectedEventId)?.category === 'Impact' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentEvt = events.find((e) => e.id === selectedEventId);
+                      setAchievement(`Winning Team (Against the Motion) - First Place in ${currentEvt?.name || 'the Debate'}, organized by Namdapha House, IIT Madras.`);
+                    }}
+                    className="px-2.5 py-1 rounded text-[11px] font-semibold border transition-all shadow-2xs bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100"
+                    title="Debate Winning Team Citation"
+                  >
+                    🗣️ Winning Team (Against the Motion)
+                  </button>
+                )}
               </div>
 
               <textarea
@@ -650,6 +664,9 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
                 onChange={(e) => setAchievement(e.target.value)}
                 required
               />
+              <p className="text-[11px] text-neutral-secondary">
+                💡 You can freely edit or retype this citation text. It will be printed directly in the achievement section of the certificate.
+              </p>
             </div>
 
             <div>
