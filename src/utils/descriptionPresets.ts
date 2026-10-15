@@ -56,6 +56,8 @@ export const DESCRIPTION_PRESETS: DescriptionPreset[] = [
  */
 export function autoDetectCitation(text: string, eventName?: string): string {
   if (!text) return '';
+  // If the user already provided a full detailed custom description (> 50 chars), preserve it
+  if (text.trim().length > 50) return text.trim();
   const lower = text.toLowerCase().trim();
   if (lower.includes('1st') || lower.includes('first') || lower.includes('winner') || lower.includes('gold')) {
     return DESCRIPTION_PRESETS[0].generateText(eventName);
