@@ -35,13 +35,14 @@ export const EventsPage: React.FC = () => {
 
   // Form State
   const [formName, setFormName] = useState('');
-  const [formCategory, setFormCategory] = useState<EventCategory>('Technology');
+  const [formCategory, setFormCategory] = useState<EventCategory>('Impact');
   const [formScope, setFormScope] = useState<EventScope>('Pan-Namdapha');
   const [formStatus, setFormStatus] = useState<EventStatus>('active');
   const [formDate, setFormDate] = useState('');
   const [formDesc, setFormDesc] = useState('');
   const [formTemplateId, setFormTemplateId] = useState('');
   const [formApproval, setFormApproval] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Archive Confirmation
@@ -69,13 +70,14 @@ export const EventsPage: React.FC = () => {
   const openCreateModal = () => {
     setEditingEvent(null);
     setFormName('');
-    setFormCategory('Technology');
+    setFormCategory('Impact');
     setFormScope('Pan-Namdapha');
     setFormStatus('active');
     setFormDate(new Date().toISOString().split('T')[0]);
     setFormDesc('');
     setFormTemplateId('');
     setFormApproval(false);
+    setFormError(null);
     setIsModalOpen(true);
   };
 
@@ -83,13 +85,22 @@ export const EventsPage: React.FC = () => {
     e.stopPropagation();
     setEditingEvent(evt);
     setFormName(evt.name);
-    setFormCategory(evt.category);
+    const normalizeCategory = (cat: string): EventCategory => {
+      if (cat === 'Sports') return 'Sport';
+      if (cat === 'Technology') return 'Technical';
+      if (cat === 'Debate') return 'Impact';
+      if (cat === 'Music') return 'Cultural';
+      if (cat === 'Impact' || cat === 'Cultural' || cat === 'Sport' || cat === 'Technical') return cat;
+      return 'Technical';
+    };
+    setFormCategory(normalizeCategory(evt.category));
     setFormScope(evt.scope);
     setFormStatus(evt.status);
     setFormDate(evt.eventDate);
     setFormDesc(evt.description || '');
     setFormTemplateId(evt.defaultTemplateId || '');
     setFormApproval(evt.issuanceApprovalRequired || false);
+    setFormError(null);
     setIsModalOpen(true);
   };
 
@@ -98,6 +109,7 @@ export const EventsPage: React.FC = () => {
     if (!formName.trim()) return;
 
     setIsSubmitting(true);
+    setFormError(null);
     try {
       if (editingEvent) {
         await portalService.updateEvent(editingEvent.id, {
@@ -124,6 +136,8 @@ export const EventsPage: React.FC = () => {
       }
       setIsModalOpen(false);
       await fetchData();
+    } catch (err: any) {
+      setFormError(err.message || 'Failed to save event. Please check the provided information.');
     } finally {
       setIsSubmitting(false);
     }
@@ -353,6 +367,16 @@ export const EventsPage: React.FC = () => {
         maxWidth="md"
       >
         <form onSubmit={handleSaveEvent} className="space-y-4">
+          {formError && (
+            <div className="p-3 rounded-md bg-red-50/90 border border-red-200 text-xs text-red-700 flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
+              <div className="flex-1">
+                <span className="font-semibold block text-red-900">Failed to save event</span>
+                <span className="mt-0.5 block text-red-700 leading-relaxed">{formError}</span>
+              </div>
+            </div>
+          )}
+
           <Input
             label="Event Name"
             placeholder="e.g. Namdapha Annual Tech Symposium 2026"
@@ -367,13 +391,10 @@ export const EventsPage: React.FC = () => {
               value={formCategory}
               onChange={(e) => setFormCategory(e.target.value as EventCategory)}
               options={[
-                { value: 'Sports', label: 'Sports' },
                 { value: 'Impact', label: 'Impact' },
                 { value: 'Cultural', label: 'Cultural' },
-                { value: 'Technology', label: 'Technology' },
-                { value: 'Debate', label: 'Debate' },
-                { value: 'Music', label: 'Music' },
-                { value: 'Other', label: 'Other' },
+                { value: 'Sport', label: 'Sport' },
+                { value: 'Technical', label: 'Technical' },
               ]}
             />
             <Select

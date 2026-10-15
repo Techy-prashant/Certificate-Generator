@@ -158,7 +158,7 @@ test('Phase 5 PDF Generation from Preserved Certificate Snapshots', async () => 
   });
 
   // 2. Draw Dynamic QR Code pointing to canonical verification route
-  const verificationUrl = `https://portal.namdapha.study.iitm.ac.in/verify/${testCert.verificationCode}`;
+  const verificationUrl = `https://certificate-generator-liart-pi.vercel.app/verify/${testCert.verificationCode}`;
   const qrDataUrl = await QRCode.toDataURL(verificationUrl, {
     errorCorrectionLevel: 'M',
     margin: 1,
@@ -212,3 +212,34 @@ test('Phase 5 PDF Generation from Preserved Certificate Snapshots', async () => 
   const header = String.fromCharCode(...pdfBytes.subarray(0, 5));
   assert.strictEqual(header, '%PDF-', 'Header must match PDF signature');
 });
+
+test('Phase 5 Verification & QR Code: Canonical Production Domain & Localhost Suppression', () => {
+  const pdfServiceContent = fs.readFileSync(path.join(projectRoot, 'src/services/pdfService.ts'), 'utf-8');
+  const envExampleContent = fs.readFileSync(path.join(projectRoot, '.env.example'), 'utf-8');
+  const envLocalContent = fs.readFileSync(path.join(projectRoot, '.env.local'), 'utf-8');
+
+  // Verify production domain constant and helper
+  assert.ok(
+    pdfServiceContent.includes("PRODUCTION_PORTAL_URL = 'https://certificate-generator-liart-pi.vercel.app'"),
+    'pdfService must define PRODUCTION_PORTAL_URL pointing to Vercel app'
+  );
+  assert.ok(
+    pdfServiceContent.includes('getVerificationOrigin'),
+    'pdfService must export getVerificationOrigin helper'
+  );
+  assert.ok(
+    pdfServiceContent.includes("!envUrl.includes('localhost')"),
+    'pdfService must suppress localhost in QR verification links'
+  );
+
+  // Verify environment variables point to production domain
+  assert.ok(
+    envExampleContent.includes('VITE_PUBLIC_PORTAL_URL=https://certificate-generator-liart-pi.vercel.app'),
+    '.env.example must specify Vercel portal URL'
+  );
+  assert.ok(
+    envLocalContent.includes('VITE_PUBLIC_PORTAL_URL=https://certificate-generator-liart-pi.vercel.app'),
+    '.env.local must specify Vercel portal URL'
+  );
+});
+

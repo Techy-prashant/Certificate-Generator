@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS public.events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     description TEXT,
-    category TEXT NOT NULL CHECK (category IN ('Technology', 'Debate', 'Cultural', 'Music', 'Sports', 'Other')),
+    category TEXT NOT NULL CHECK (category IN ('Impact', 'Cultural', 'Sport', 'Technical')),
     scope TEXT NOT NULL CHECK (scope IN ('House-level', 'Inter-house', 'Pan-Namdapha')),
     event_date DATE NOT NULL,
     status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'completed', 'archived')),

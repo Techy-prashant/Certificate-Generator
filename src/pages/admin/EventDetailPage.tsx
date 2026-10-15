@@ -52,7 +52,7 @@ export const EventDetailPage: React.FC = () => {
   const [isEditEventOpen, setIsEditEventOpen] = useState(false);
   const [editName, setEditName] = useState('');
   const [editDesc, setEditDesc] = useState('');
-  const [editCategory, setEditCategory] = useState<EventCategory>('Technology');
+  const [editCategory, setEditCategory] = useState<EventCategory>('Impact');
   const [editScope, setEditScope] = useState<EventScope>('Pan-Namdapha');
   const [editDate, setEditDate] = useState('');
   const [editStatus, setEditStatus] = useState<EventStatus>('draft');
@@ -112,7 +112,15 @@ export const EventDetailPage: React.FC = () => {
       if (evt) {
         setEditName(evt.name);
         setEditDesc(evt.description || '');
-        setEditCategory(evt.category);
+        const normalizeCategory = (cat: string): EventCategory => {
+          if (cat === 'Sports') return 'Sport';
+          if (cat === 'Technology') return 'Technical';
+          if (cat === 'Debate') return 'Impact';
+          if (cat === 'Music') return 'Cultural';
+          if (cat === 'Impact' || cat === 'Cultural' || cat === 'Sport' || cat === 'Technical') return cat;
+          return 'Technical';
+        };
+        setEditCategory(normalizeCategory(evt.category));
         setEditScope(evt.scope);
         setEditDate(evt.eventDate);
         setEditStatus(evt.status);
@@ -719,13 +727,10 @@ export const EventDetailPage: React.FC = () => {
               value={editCategory}
               onChange={(e) => setEditCategory(e.target.value as EventCategory)}
               options={[
-                { value: 'Sports', label: 'Sports' },
                 { value: 'Impact', label: 'Impact' },
                 { value: 'Cultural', label: 'Cultural' },
-                { value: 'Technology', label: 'Technology' },
-                { value: 'Debate', label: 'Debate' },
-                { value: 'Music', label: 'Music' },
-                { value: 'Other', label: 'Other' },
+                { value: 'Sport', label: 'Sport' },
+                { value: 'Technical', label: 'Technical' },
               ]}
             />
             <Select

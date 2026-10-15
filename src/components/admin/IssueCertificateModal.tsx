@@ -27,7 +27,7 @@ import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Badge } from '../ui/Badge';
 import { LoadingState } from '../ui/LoadingState';
-import { downloadPdfBlob, generatePdfFromDetails, CertificateRenderData } from '../../services/pdfService';
+import { downloadPdfBlob, generatePdfFromDetails, getVerificationOrigin, CertificateRenderData } from '../../services/pdfService';
 import { ProtectedCertificateModal } from './ProtectedCertificateModal';
 
 interface IssueCertificateModalProps {
@@ -72,6 +72,7 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
   // Success state
   const [issuedCert, setIssuedCert] = useState<Certificate | null>(null);
   const [isCopied, setIsCopied] = useState(false);
+  const [isUrlCopied, setIsUrlCopied] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   // Fetch initial data when opened
@@ -294,6 +295,14 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
     setTimeout(() => setIsCopied(false), 2000);
   };
 
+  const handleCopyVerificationUrl = () => {
+    if (!issuedCert) return;
+    const fullUrl = `${getVerificationOrigin()}/verify/${issuedCert.verificationCode}`;
+    navigator.clipboard.writeText(fullUrl);
+    setIsUrlCopied(true);
+    setTimeout(() => setIsUrlCopied(false), 2000);
+  };
+
   return (
     <Modal
       isOpen={isOpen}
@@ -359,22 +368,36 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
           </div>
 
           {/* Verification link info */}
-          <div className="flex items-center justify-between p-3 bg-brand-violet/5 rounded-lg border border-brand-violet/20 text-xs">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-brand-violet/5 rounded-lg border border-brand-violet/20 text-xs gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <ShieldCheck className="w-4 h-4 text-brand-violet shrink-0" />
-              <span className="text-neutral-main">
-                Public verification URL: <strong className="font-mono">/verify/{issuedCert.verificationCode}</strong>
+              <span className="text-neutral-main truncate">
+                Public verification URL:{' '}
+                <strong className="font-mono text-brand-violet">
+                  {getVerificationOrigin()}/verify/{issuedCert.verificationCode}
+                </strong>
               </span>
             </div>
-            <a
-              href={`/verify/${issuedCert.verificationCode}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-xs font-semibold text-brand-violet hover:underline"
-            >
-              <span>Test Link</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleCopyVerificationUrl}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-neutral-secondary hover:text-neutral-main hover:bg-white/80 px-2 py-1 rounded border border-neutral-subtle/80 transition-colors"
+                title="Copy public verification link"
+              >
+                {isUrlCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{isUrlCopied ? 'Copied' : 'Copy Link'}</span>
+              </button>
+              <a
+                href={`${getVerificationOrigin()}/verify/${issuedCert.verificationCode}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-brand-violet hover:underline px-2 py-1"
+              >
+                <span>Test Link</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-neutral-subtle">

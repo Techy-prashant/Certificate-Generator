@@ -211,7 +211,7 @@ test('Phase 4 PDF Engine: Long Achievement Description Multiline Wrapping', asyn
 });
 
 test('Phase 4 PDF Engine: High-Density Dynamic QR Code Generation & Verification URL', async () => {
-  const verificationUrl = 'https://portal.namdapha.study.iitm.ac.in/verify/482910';
+  const verificationUrl = 'https://certificate-generator-liart-pi.vercel.app/verify/482910';
   
   // Generate QR as Data URL (PNG)
   const qrDataUrl = await QRCode.toDataURL(verificationUrl, {

@@ -525,6 +525,35 @@ export function createPdfPreviewUrl(pdfBytes: Uint8Array): string {
   return URL.createObjectURL(blob);
 }
 
+export const PRODUCTION_PORTAL_URL = 'https://certificate-generator-liart-pi.vercel.app';
+
+/**
+ * Resolves the public portal base URL used for certificate verification links and QR codes.
+ * Ensures localhost / 127.0.0.1 is not baked into verification QR codes on generated certificates.
+ */
+export function getVerificationOrigin(customOrigin?: string): string {
+  if (customOrigin && customOrigin.trim()) {
+    return customOrigin.trim().replace(/\/+$/, '');
+  }
+
+  // 1. Explicit environment variable configuration
+  const envUrl = (import.meta.env.VITE_PUBLIC_PORTAL_URL || '').trim().replace(/\/+$/, '');
+  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+    return envUrl;
+  }
+
+  // 2. Current window origin if running on a live public domain
+  if (typeof window !== 'undefined' && window.location.origin) {
+    const windowOrigin = window.location.origin.trim().replace(/\/+$/, '');
+    if (!windowOrigin.includes('localhost') && !windowOrigin.includes('127.0.0.1')) {
+      return windowOrigin;
+    }
+  }
+
+  // 3. Fallback to production Vercel portal
+  return PRODUCTION_PORTAL_URL;
+}
+
 /**
  * Generates a full PDF binary from a persisted certificate snapshot details object.
  */
@@ -533,7 +562,7 @@ export async function generatePdfFromDetails(
   verificationOrigin?: string
 ): Promise<Uint8Array> {
   const { certificate, templateSnapshot, signatorySnapshot } = details;
-  const origin = verificationOrigin || (typeof window !== 'undefined' ? window.location.origin : 'https://portal.namdapha.study.iitm.ac.in');
+  const origin = getVerificationOrigin(verificationOrigin);
   const verificationUrl = `${origin}/verify/${certificate.verificationCode}`;
 
   const template: Template = {

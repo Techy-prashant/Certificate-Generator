@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 export interface ModalProps {
@@ -39,6 +40,7 @@ export const Modal: React.FC<ModalProps> = ({
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
+  if (typeof document === 'undefined') return null;
 
   const widthClasses = {
     sm: 'max-w-md',
@@ -50,21 +52,21 @@ export const Modal: React.FC<ModalProps> = ({
     full: 'max-w-[96vw]',
   }[maxWidth] || 'max-w-lg';
 
-  return (
+  const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-midnight/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-brand-midnight/60 backdrop-blur-sm transition-opacity"
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
     >
       <div
-        className="fixed inset-0"
+        className="fixed inset-0 bg-transparent"
         aria-hidden="true"
         onClick={onClose}
       />
 
       <div
-        className={`relative w-full ${widthClasses} bg-white rounded-xl shadow-xl border border-neutral-subtle flex flex-col max-h-[90vh] overflow-hidden z-10 animate-in zoom-in-95 duration-150`}
+        className={`relative w-full ${widthClasses} bg-white rounded-xl shadow-xl border border-neutral-subtle flex flex-col max-h-[90vh] overflow-hidden z-10`}
       >
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-neutral-subtle">
           <div>
@@ -92,4 +94,6 @@ export const Modal: React.FC<ModalProps> = ({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };

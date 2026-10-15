@@ -19,7 +19,7 @@ export interface OrganizationSettings {
   createdAt: string;
 }
 
-export type EventCategory = 'Sports' | 'Impact' | 'Cultural' | 'Technology' | 'Debate' | 'Music' | 'Other';
+export type EventCategory = 'Impact' | 'Cultural' | 'Sport' | 'Technical';
 export type EventScope = 'House-level' | 'Inter-house' | 'Pan-Namdapha';
 export type EventStatus = 'draft' | 'active' | 'completed' | 'archived';
 

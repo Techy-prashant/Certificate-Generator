@@ -439,7 +439,7 @@ export const mockTemplates: Template[] = [
     id: 'tpl-03',
     name: 'Sports(freefire, bgmi, chess, coc)',
     description: 'Dynamic emerald and slate wave template for Sports, Esports and Strategy gaming',
-    category: 'Sports',
+    category: 'Sport',
     backgroundUrl: '/certificates/Sports(freefire, bgmi, chess, coc).png',
     pageWidth: 297,
     pageHeight: 210,
@@ -585,12 +585,12 @@ export const mockTemplates: Template[] = [
 ];
 
 export const mockEvents: Event[] = [
-  // --- SPORTS DOMAIN (5 Events) ---
+  // --- SPORT DOMAIN (5 Events) ---
   {
     id: 'evt-02',
     name: 'Knight64(Chess)',
     description: 'Premier House chess championship testing tactical foresight, endgames, and rapid precision.',
-    category: 'Sports',
+    category: 'Sport',
     scope: 'Inter-house',
     eventDate: '2026-03-25',
     status: 'completed',
@@ -603,7 +603,7 @@ export const mockEvents: Event[] = [
     id: 'evt-sp-02',
     name: 'Firestrom(Free fire)',
     description: 'High-octane Battle Royale survival tournament featuring premier student squads.',
-    category: 'Sports',
+    category: 'Sport',
     scope: 'Pan-Namdapha',
     eventDate: '2026-04-10',
     status: 'active',
@@ -616,7 +616,7 @@ export const mockEvents: Event[] = [
     id: 'evt-sp-03',
     name: 'Valorant Vanguards',
     description: 'Tactical 5v5 FPS tournament testing site execution, clutch defense, and team synergy.',
-    category: 'Sports',
+    category: 'Sport',
     scope: 'Pan-Namdapha',
     eventDate: '2026-04-18',
     status: 'active',
@@ -629,7 +629,7 @@ export const mockEvents: Event[] = [
     id: 'evt-sp-04',
     name: 'Clanforge(COC)',
     description: 'Strategic Clan Wars league and precision 3-star base attack championship.',
-    category: 'Sports',
+    category: 'Sport',
     scope: 'House-level',
     eventDate: '2026-05-02',
     status: 'active',
@@ -642,7 +642,7 @@ export const mockEvents: Event[] = [
     id: 'evt-sp-05',
     name: 'The Battleground',
     description: 'Flagship BGMI battlegrounds championship testing zone rotation and clutch gunplay.',
-    category: 'Sports',
+    category: 'Sport',
     scope: 'Inter-house',
     eventDate: '2026-05-15',
     status: 'active',
