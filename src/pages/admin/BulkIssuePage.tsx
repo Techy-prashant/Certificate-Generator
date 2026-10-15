@@ -78,11 +78,13 @@ export const BulkIssuePage: React.FC = () => {
   // Execution Progress
   const [isProcessing, setIsProcessing] = useState(false);
   const [processedCount, setProcessedCount] = useState(0);
+  const [totalToProcess, setTotalToProcess] = useState(0);
   const [successCount, setSuccessCount] = useState(0);
   const [failureCount, setFailureCount] = useState(0);
   const [createdBatch, setCreatedBatch] = useState<IssuanceBatch | null>(null);
   const [zipBlob, setZipBlob] = useState<Blob | null>(null);
   const [isZipping, setIsZipping] = useState(false);
+  const [isQuickCreatingCats, setIsQuickCreatingCats] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -127,6 +129,7 @@ export const BulkIssuePage: React.FC = () => {
   useEffect(() => {
     if (!selectedEventId) {
       setCategories([]);
+      setSelectedCategoryId('');
       return;
     }
     const loadCats = async () => {
@@ -136,7 +139,11 @@ export const BulkIssuePage: React.FC = () => {
           portalService.getEventSignatories(selectedEventId).catch(() => []),
         ]);
         setCategories(cats);
-        if (cats.length > 0) setSelectedCategoryId(cats[0].id);
+        if (cats.length > 0) {
+          setSelectedCategoryId((prev) => (cats.some((c) => c.id === prev) ? prev : cats[0].id));
+        } else {
+          setSelectedCategoryId('');
+        }
 
         const currentEvent = events.find((e) => e.id === selectedEventId);
         if (currentEvent?.defaultTemplateId) {
@@ -151,6 +158,36 @@ export const BulkIssuePage: React.FC = () => {
     };
     loadCats();
   }, [selectedEventId, events]);
+
+  const handleQuickAddDefaultCategories = async () => {
+    if (!selectedEventId) return;
+    setIsQuickCreatingCats(true);
+    try {
+      const defaultCatNames = [
+        'First Place (Winner)',
+        'Second Place (Runner-up)',
+        'Third Place',
+        'Certificate of Participation',
+      ];
+      for (const name of defaultCatNames) {
+        await portalService.createAwardCategory({
+          eventId: selectedEventId,
+          name,
+          templateId: selectedTemplateId || undefined,
+          status: 'active',
+        });
+      }
+      const updatedCats = await portalService.getAwardCategories(selectedEventId);
+      setCategories(updatedCats);
+      if (updatedCats.length > 0) {
+        setSelectedCategoryId(updatedCats[0].id);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to auto-generate categories');
+    } finally {
+      setIsQuickCreatingCats(false);
+    }
+  };
 
   // Handle CSV file selection and parsing with PapaParse
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -255,7 +292,14 @@ export const BulkIssuePage: React.FC = () => {
       alert('Please configure event, template, and ensure there are valid rows to issue.');
       return;
     }
+    if (!selectedCategoryId) {
+      alert('Please select an award category in Step 1 before issuing certificates.');
+      setCurrentStep(1);
+      return;
+    }
 
+    const targetBatch = [...validRows];
+    setTotalToProcess(targetBatch.length);
     setIsProcessing(true);
     setCurrentStep(4);
     setProcessedCount(0);
@@ -270,7 +314,7 @@ export const BulkIssuePage: React.FC = () => {
         eventId: selectedEventId,
         originalFilename: csvFile?.name || 'bulk_import.csv',
         totalRows: rows.length,
-        validRows: validRows.length,
+        validRows: targetBatch.length,
         status: 'processing',
       });
       setCreatedBatch(batchRecord);
@@ -281,8 +325,8 @@ export const BulkIssuePage: React.FC = () => {
 
       // Bounded concurrency chunk size = 3
       const chunkSize = 3;
-      for (let i = 0; i < validRows.length; i += chunkSize) {
-        const chunk = validRows.slice(i, i + chunkSize);
+      for (let i = 0; i < targetBatch.length; i += chunkSize) {
+        const chunk = targetBatch.slice(i, i + chunkSize);
 
         await Promise.all(
           chunk.map(async (row) => {
@@ -469,17 +513,32 @@ export const BulkIssuePage: React.FC = () => {
                 required
               />
 
-              <Select
-                label="Default Award Category"
-                value={selectedCategoryId}
-                onChange={(e) => setSelectedCategoryId(e.target.value)}
-                options={
-                  categories.length > 0
-                    ? categories.map((c) => ({ value: c.id, label: c.name }))
-                    : [{ value: '', label: 'No award categories configured' }]
-                }
-                required
-              />
+              <div>
+                <Select
+                  label="Default Award Category"
+                  value={selectedCategoryId}
+                  onChange={(e) => setSelectedCategoryId(e.target.value)}
+                  options={
+                    categories.length > 0
+                      ? categories.map((c) => ({ value: c.id, label: c.name }))
+                      : [{ value: '', label: 'No award categories configured' }]
+                  }
+                  required
+                />
+                {categories.length === 0 && (
+                  <div className="mt-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs flex items-center justify-between gap-2">
+                    <span className="text-amber-800">This event has no award categories configured.</span>
+                    <button
+                      type="button"
+                      onClick={handleQuickAddDefaultCategories}
+                      disabled={isQuickCreatingCats}
+                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded text-xs font-semibold shrink-0 cursor-pointer transition-colors"
+                    >
+                      {isQuickCreatingCats ? 'Creating...' : '+ Auto-Generate Categories'}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -549,7 +608,7 @@ export const BulkIssuePage: React.FC = () => {
                 size="sm"
                 rightIcon={<ArrowRight className="w-4 h-4" />}
                 onClick={() => setCurrentStep(2)}
-                disabled={!selectedEventId || !selectedTemplateId || selectedSignatoryIds.length === 0}
+                disabled={!selectedEventId || !selectedTemplateId || !selectedCategoryId || selectedSignatoryIds.length === 0}
               >
                 Continue to Upload CSV
               </Button>
@@ -771,7 +830,7 @@ export const BulkIssuePage: React.FC = () => {
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs font-semibold">
                 <span className="text-neutral-main">
-                  Progress: {processedCount} / {validRows.length} ({Math.round((processedCount / (validRows.length || 1)) * 100)}%)
+                  Progress: {processedCount} / {totalToProcess || validRows.length} ({Math.min(100, Math.round((processedCount / (totalToProcess || validRows.length || 1)) * 100))}%)
                 </span>
                 <span className="text-neutral-secondary">
                   Success: <strong className="text-emerald-600">{successCount}</strong> • Failed: <strong className="text-rose-600">{failureCount}</strong>
@@ -780,13 +839,13 @@ export const BulkIssuePage: React.FC = () => {
               <div className="w-full h-3 rounded-full bg-neutral-surface overflow-hidden border border-neutral-subtle">
                 <div
                   className="h-full bg-brand-violet transition-all duration-300"
-                  style={{ width: `${Math.round((processedCount / (validRows.length || 1)) * 100)}%` }}
+                  style={{ width: `${Math.min(100, Math.round((processedCount / (totalToProcess || validRows.length || 1)) * 100))}%` }}
                 />
               </div>
             </div>
 
             {/* ZIP Download Card */}
-            {!isProcessing && zipBlob && (
+            {!isProcessing && zipBlob && successCount > 0 && (
               <div
                 role="status"
                 aria-live="polite"
@@ -857,6 +916,36 @@ export const BulkIssuePage: React.FC = () => {
                 </table>
               </div>
             </div>
+
+            {/* Action Footer to Retry / Return */}
+            {!isProcessing && (
+              <div className="pt-3 border-t border-neutral-subtle flex flex-col sm:flex-row items-center justify-between gap-3">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setCurrentStep(1);
+                    setProcessedCount(0);
+                    setSuccessCount(0);
+                    setFailureCount(0);
+                    setZipBlob(null);
+                  }}
+                  leftIcon={<RotateCcw className="w-4 h-4" />}
+                >
+                  Start New Batch / Edit Settings
+                </Button>
+                {zipBlob && successCount > 0 && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    leftIcon={<Download className="w-4 h-4" />}
+                    onClick={handleDownloadZip}
+                  >
+                    Download ZIP ({successCount} PDFs)
+                  </Button>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
