@@ -9,7 +9,8 @@ import {
   Eye,
   Copy,
   Check,
-  Sparkles
+  Sparkles,
+  Plus
 } from 'lucide-react';
 import { DESCRIPTION_PRESETS, autoDetectCitation } from '../../utils/descriptionPresets';
 import { portalService } from '../../services';
@@ -61,6 +62,7 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
 
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isQuickCreatingCats, setIsQuickCreatingCats] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isGeneratingPreviewPdf, setIsGeneratingPreviewPdf] = useState(false);
   const [isSamplePreviewOpen, setIsSamplePreviewOpen] = useState(false);
@@ -178,6 +180,38 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
     setSelectedSignatoryIds((prev) =>
       prev.includes(sigId) ? prev.filter((id) => id !== sigId) : [...prev, sigId]
     );
+  };
+
+  const handleQuickAddDefaultCategories = async () => {
+    if (!selectedEventId) return;
+    setIsQuickCreatingCats(true);
+    try {
+      const defaultCatNames = [
+        'First Place (Winner)',
+        'Second Place (Runner-up)',
+        'Third Place',
+        'Certificate of Participation',
+      ];
+      for (const name of defaultCatNames) {
+        await portalService.createAwardCategory({
+          eventId: selectedEventId,
+          name,
+          templateId: selectedTemplateId || undefined,
+          status: 'active',
+        });
+      }
+      const updatedCats = await portalService.getAwardCategories(selectedEventId);
+      setCategories(updatedCats);
+      if (updatedCats.length > 0) {
+        setSelectedCategoryId(updatedCats[0].id);
+        const currentEvent = events.find((ev) => ev.id === selectedEventId);
+        setAchievement(autoDetectCitation(updatedCats[0].name, currentEvent?.name));
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to auto-generate categories');
+    } finally {
+      setIsQuickCreatingCats(false);
+    }
   };
 
   // Live Certificate Preview Generator (On-Screen Protected Sample View)
@@ -466,22 +500,33 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
             {categories.length === 0 && (
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start gap-2.5 shadow-xs">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div className="space-y-1">
+                <div className="space-y-1.5 flex-1">
                   <p className="font-semibold text-amber-950">No Award Categories Configured for this Event</p>
                   <p className="text-[11px] text-amber-800 leading-relaxed">
                     Certificates must belong to an award category (e.g. <em>1st Winner</em>, <em>2nd Place</em>, <em>Participation</em>).
                   </p>
-                  {selectedEventId && (
-                    <a
-                      href={`/admin/events/${selectedEventId}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-violet underline pt-0.5 hover:text-brand-midnight"
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleQuickAddDefaultCategories}
+                      disabled={isQuickCreatingCats}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-amber-200/80 hover:bg-amber-300 text-amber-950 font-semibold text-[11px] transition-colors"
                     >
-                      <span>Open Event Settings to Add Categories</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  )}
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{isQuickCreatingCats ? 'Generating Categories...' : 'Auto-Generate Standard Categories (1st, 2nd, 3rd, Participation)'}</span>
+                    </button>
+                    {selectedEventId && (
+                      <a
+                        href={`/admin/events/${selectedEventId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-violet underline hover:text-brand-midnight"
+                      >
+                        <span>Open Event Details</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
