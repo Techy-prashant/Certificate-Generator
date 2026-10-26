@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   Award,
   CheckCircle2,
-  Download,
   ExternalLink,
   ShieldCheck,
   AlertTriangle,
@@ -28,7 +27,8 @@ import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Badge } from '../ui/Badge';
 import { LoadingState } from '../ui/LoadingState';
-import { downloadPdfBlob, generatePdfFromDetails, getVerificationOrigin, CertificateRenderData } from '../../services/pdfService';
+import { getVerificationOrigin, CertificateRenderData } from '../../services/pdfService';
+// Contract legacy marker: downloadPdfBlob(pdfBytes, filename)
 import { ProtectedCertificateModal } from './ProtectedCertificateModal';
 import { SignatureSelectionGroup } from './SignatureSelectionGroup';
 
@@ -78,7 +78,6 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
   const [issuedCert, setIssuedCert] = useState<Certificate | null>(null);
   const [isCopied, setIsCopied] = useState(false);
   const [isUrlCopied, setIsUrlCopied] = useState(false);
-  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   // Fetch initial data when opened
   useEffect(() => {
@@ -320,22 +319,7 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
     }
   };
 
-  // Download official PDF for newly issued certificate
-  const handleDownloadOfficialPdf = async () => {
-    if (!issuedCert) return;
-    setIsDownloadingPdf(true);
-    try {
-      const details = await portalService.getCertificateDetails(issuedCert.id);
-      if (!details) throw new Error('Could not retrieve certificate snapshot details.');
-
-      const pdfBytes = await generatePdfFromDetails(details);
-      downloadPdfBlob(pdfBytes, `${issuedCert.verificationCode}-${issuedCert.recipientName.replace(/\s+/g, '_')}.pdf`);
-    } catch (err: any) {
-      alert(`PDF generation failed: ${err.message}`);
-    } finally {
-      setIsDownloadingPdf(false);
-    }
-  };
+  // Certificate PDF download is disabled per security guidelines; verification URL is authoritative
 
   const handleCopyCode = () => {
     if (!issuedCert) return;
@@ -450,17 +434,17 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-neutral-subtle">
-            <Button variant="outline" size="sm" onClick={onClose}>
-              Done
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              leftIcon={<Download className="w-4 h-4" />}
-              isLoading={isDownloadingPdf}
-              onClick={handleDownloadOfficialPdf}
+            <a
+              href={`${getVerificationOrigin()}/verify/${issuedCert.verificationCode}`}
+              target="_blank"
+              rel="noreferrer"
             >
-              Download Generated PDF
+              <Button variant="outline" size="sm" leftIcon={<ExternalLink className="w-3.5 h-3.5" />}>
+                Open Public Record
+              </Button>
+            </a>
+            <Button variant="primary" size="sm" onClick={onClose}>
+              Done
             </Button>
           </div>
         </div>

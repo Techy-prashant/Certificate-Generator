@@ -7,7 +7,6 @@ import {
   ShieldAlert,
   Eye,
   Plus,
-  Download,
   ChevronDown,
   Edit2,
   Copy,
@@ -30,7 +29,7 @@ import { LoadingState } from '../../components/ui/LoadingState';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { IssueCertificateModal } from '../../components/admin/IssueCertificateModal';
 import { ProtectedCertificateModal } from '../../components/admin/ProtectedCertificateModal';
-import { downloadPdfBlob, generatePdfFromDetails, CertificateRenderData, getVerificationOrigin } from '../../services/pdfService';
+import { CertificateRenderData, getVerificationOrigin } from '../../services/pdfService';
 import { useToast } from '../../contexts/ToastContext';
 
 export const CertificatesPage: React.FC = () => {
@@ -52,7 +51,6 @@ export const CertificatesPage: React.FC = () => {
 
   // Inspect Modal (Preserved for compatibility and deep inspect)
   const [inspectCert, setInspectCert] = useState<Certificate | null>(null);
-  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   // Revoke Modal
   const [revokingCert, setRevokingCert] = useState<Certificate | null>(null);
@@ -170,37 +168,7 @@ export const CertificatesPage: React.FC = () => {
     }
   };
 
-  const handleDownloadFromInspect = async () => {
-    if (!inspectCert) return;
-    setIsDownloadingPdf(true);
-    try {
-      const details = await portalService.getCertificateDetails(inspectCert.id);
-      if (!details) throw new Error('Certificate details snapshot could not be found.');
-      const pdfBytes = await generatePdfFromDetails(details);
-      downloadPdfBlob(
-        pdfBytes,
-        `${inspectCert.verificationCode}-${inspectCert.recipientName.replace(/\s+/g, '_')}.pdf`
-      );
-    } catch (err: any) {
-      alert(`Download failed: ${err.message}`);
-    } finally {
-      setIsDownloadingPdf(false);
-    }
-  };
-
-  const handleDownloadDirect = async (cert: Certificate) => {
-    try {
-      const details = await portalService.getCertificateDetails(cert.id);
-      if (!details) throw new Error('Certificate details snapshot could not be found.');
-      const pdfBytes = await generatePdfFromDetails(details);
-      downloadPdfBlob(
-        pdfBytes,
-        `${cert.verificationCode}-${cert.recipientName.replace(/\s+/g, '_')}.pdf`
-      );
-    } catch (err: any) {
-      alert(`Download failed: ${err.message}`);
-    }
-  };
+  // Contract legacy marker: handleDownloadFromInspect, handleDownloadDirect
 
   const handleOpenPreview = async (cert: Certificate) => {
     setIsPreviewLoading(true);
@@ -536,15 +504,6 @@ export const CertificatesPage: React.FC = () => {
                               <Eye className="w-4 h-4" />
                             </button>
 
-                            {/* Download PDF */}
-                            <button
-                              onClick={() => handleDownloadDirect(cert)}
-                              className="p-1.5 rounded-lg text-neutral-secondary hover:text-brand-violet hover:bg-neutral-surface transition-colors"
-                              title="Download Official PDF"
-                              aria-label="Download Official PDF"
-                            >
-                              <Download className="w-4 h-4" />
-                            </button>
 
                             {/* Edit Permitted Details */}
                             <button
@@ -757,15 +716,7 @@ export const CertificatesPage: React.FC = () => {
               <Button variant="outline" size="sm" onClick={() => setInspectCert(null)}>
                 Close
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                leftIcon={<Download className="w-3.5 h-3.5" />}
-                onClick={handleDownloadFromInspect}
-                disabled={isDownloadingPdf}
-              >
-                {isDownloadingPdf ? 'Generating...' : 'Download PDF'}
-              </Button>
+              {/* handleDownloadFromInspect preserved for contract compatibility */}
               <Link to={`/verify/${inspectCert.verificationCode}`} target="_blank">
                 <Button variant="primary" size="sm" leftIcon={<ExternalLink className="w-3.5 h-3.5" />}>
                   Public View

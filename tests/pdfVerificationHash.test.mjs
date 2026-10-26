@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
-test('Hash #pdf Feature: Migration file for public certificate details RPC exists and has SECURITY DEFINER', () => {
+test('Public Verification: Migration file for public certificate details RPC exists and has SECURITY DEFINER', () => {
   const migrationPath = path.join(
     rootDir,
     'supabase',
@@ -36,7 +36,7 @@ test('Hash #pdf Feature: Migration file for public certificate details RPC exist
   );
 });
 
-test('Hash #pdf Feature: apiInterface includes getCertificatePublicDetails', () => {
+test('Public Verification: apiInterface includes getCertificatePublicDetails', () => {
   const apiPath = path.join(rootDir, 'src', 'services', 'apiInterface.ts');
   const content = fs.readFileSync(apiPath, 'utf-8');
   assert.ok(
@@ -45,7 +45,7 @@ test('Hash #pdf Feature: apiInterface includes getCertificatePublicDetails', () 
   );
 });
 
-test('Hash #pdf Feature: supabaseService implements getCertificatePublicDetails with fallback', () => {
+test('Public Verification: supabaseService implements getCertificatePublicDetails with fallback', () => {
   const servicePath = path.join(rootDir, 'src', 'services', 'supabaseService.ts');
   const content = fs.readFileSync(servicePath, 'utf-8');
   assert.ok(
@@ -62,7 +62,7 @@ test('Hash #pdf Feature: supabaseService implements getCertificatePublicDetails 
   );
 });
 
-test('Hash #pdf Feature: mockApiService implements getCertificatePublicDetails', () => {
+test('Public Verification: mockApiService implements getCertificatePublicDetails', () => {
   const mockServicePath = path.join(rootDir, 'src', 'services', 'mockApiService.ts');
   const content = fs.readFileSync(mockServicePath, 'utf-8');
   assert.ok(
@@ -71,7 +71,7 @@ test('Hash #pdf Feature: mockApiService implements getCertificatePublicDetails',
   );
 });
 
-test('Hash #pdf Feature: mockData contains verification code 643926', () => {
+test('Public Verification: mockData contains verification code 643926', () => {
   const mockDataPath = path.join(rootDir, 'src', 'services', 'mockData.ts');
   const content = fs.readFileSync(mockDataPath, 'utf-8');
   assert.ok(
@@ -80,35 +80,62 @@ test('Hash #pdf Feature: mockData contains verification code 643926', () => {
   );
 });
 
-test('Hash #pdf Feature: VerifyPage listens to #pdf hash and generates vector PDF with interactive viewer', () => {
+test('Security & Verification: VerifyPage presents pure authoritative record without vulnerable PDF viewer or downloads', () => {
   const verifyPagePath = path.join(rootDir, 'src', 'pages', 'public', 'VerifyPage.tsx');
   const content = fs.readFileSync(verifyPagePath, 'utf-8');
   assert.ok(
-    content.includes("location.hash.toLowerCase() === '#pdf'"),
-    'VerifyPage must detect #pdf hash from URL'
+    !content.includes('<iframe'),
+    'VerifyPage must NOT render embedded iframe viewer to prevent PDF injection'
   );
   assert.ok(
-    content.includes('generatePdfFromDetails'),
-    'VerifyPage must call generatePdfFromDetails'
+    !content.includes('handleDownloadPdf'),
+    'VerifyPage must NOT include PDF download handler to prevent forgery vulnerabilities'
   );
   assert.ok(
-    content.includes('createPdfPreviewUrl'),
-    'VerifyPage must generate object URL for embedded preview'
+    content.includes('Official Certificate Verified'),
+    'VerifyPage must render official verified status banner'
   );
   assert.ok(
-    content.includes('<iframe'),
-    'VerifyPage must render embedded iframe viewer for the PDF'
+    content.includes('result.recipientName'),
+    'VerifyPage must render recipient name'
   );
   assert.ok(
-    content.includes('handleDownloadPdf'),
-    'VerifyPage must provide direct download handler'
+    content.includes('handlePrint'),
+    'VerifyPage must support printing/saving the official verification record'
+  );
+});
+
+test('Automatic Google Sheets Sync: Syncs row without #pdf hash and handles browser CORS redirect', () => {
+  const sheetsServicePath = path.join(rootDir, 'src', 'services', 'googleSheetsService.ts');
+  const content = fs.readFileSync(sheetsServicePath, 'utf-8');
+
+  assert.ok(
+    !content.includes('#pdf'),
+    'googleSheetsService must not append #pdf to spreadsheet mirror URLs'
   );
   assert.ok(
-    content.includes('handleOpenInNewTab'),
-    'VerifyPage must provide open in new tab handler'
+    content.includes("mode: 'no-cors'"),
+    'googleSheetsService must include no-cors fallback for browser Google Apps Script redirects'
   );
   assert.ok(
-    content.includes('replaceState'),
-    'VerifyPage must update URL hash smoothly via window.history.replaceState'
+    content.includes('AKfycbwIpX-Jk5umjawv0kz_acjOf3R2vocOzI_4rr-Lt0l7Zd5_sKaUmJBBDufvCpL-8Zh0tA'),
+    'googleSheetsService must configure official locked Apps Script webhook URL'
+  );
+});
+
+test('Automatic Google Sheets Sync: supabaseService and mockApiService await sync on issuance', () => {
+  const supabasePath = path.join(rootDir, 'src', 'services', 'supabaseService.ts');
+  const mockPath = path.join(rootDir, 'src', 'services', 'mockApiService.ts');
+
+  const supabaseContent = fs.readFileSync(supabasePath, 'utf-8');
+  const mockContent = fs.readFileSync(mockPath, 'utf-8');
+
+  assert.ok(
+    supabaseContent.includes("googleSheetsService.syncCertificate(certResult, 'insert')"),
+    'supabaseService must sync certificate on issue'
+  );
+  assert.ok(
+    mockContent.includes("googleSheetsService.syncCertificate(newCert, 'insert')"),
+    'mockApiService must sync certificate on issue'
   );
 });
