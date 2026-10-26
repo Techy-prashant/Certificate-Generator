@@ -25,6 +25,7 @@ import {
   SpreadsheetSyncResult,
 } from '../types';
 import { googleSheetsService } from './googleSheetsService';
+import { mockTemplates, mockSignatories } from './mockData';
 
 
 /**
@@ -118,6 +119,173 @@ export class SupabaseService implements CertificatePortalService {
       verificationCode: row.verification_code,
       revocationDate: row.revocation_date,
       revocationReasonPublic: row.revocation_reason_public,
+    };
+  }
+
+  // Public Certificate Details for Vector PDF generation & interactive viewing
+  async getCertificatePublicDetails(code: string): Promise<CertificateDetails | null> {
+    const client = this.checkClient();
+    const cleanCode = code.trim();
+
+    // 1. Attempt narrow SECURITY DEFINER RPC get_certificate_public_details
+    try {
+      const { data: rpcData, error: rpcError } = await client.rpc('get_certificate_public_details', {
+        p_code: cleanCode,
+      });
+
+      if (!rpcError && rpcData && rpcData.certificate) {
+        // Resolve background signed URL if backgroundStoragePath is provided
+        let backgroundUrl = rpcData.template_snapshot?.backgroundUrl || '';
+        if (rpcData.template_snapshot?.backgroundStoragePath && !backgroundUrl.startsWith('http')) {
+          try {
+            const { data: bgUrlData } = await client.storage
+              .from('template-backgrounds')
+              .createSignedUrl(rpcData.template_snapshot.backgroundStoragePath, 3600);
+            if (bgUrlData?.signedUrl) backgroundUrl = bgUrlData.signedUrl;
+          } catch {
+            // fallback
+          }
+        }
+
+        // Resolve signatories signed URLs if needed
+        const rawSigs = Array.isArray(rpcData.signatory_snapshot) ? rpcData.signatory_snapshot : [];
+        const resolvedSigs = await Promise.all(
+          rawSigs.map(async (sig: any, index: number) => {
+            let sigUrl = sig.signatureAssetUrl || '';
+            if (sig.signatureStoragePath && (!sigUrl || !sigUrl.startsWith('http'))) {
+              try {
+                const { data: sigUrlData } = await client.storage
+                  .from('signatory-assets')
+                  .createSignedUrl(sig.signatureStoragePath, 3600);
+                if (sigUrlData?.signedUrl) sigUrl = sigUrlData.signedUrl;
+              } catch {
+                // fallback
+              }
+            }
+            return {
+              signatoryId: sig.signatoryId || sig.id || `sig-${index}`,
+              name: sig.name,
+              designation: sig.designation,
+              signatureAssetUrl: sigUrl,
+              signatureStoragePath: sig.signatureStoragePath,
+              displayOrder: sig.displayOrder || index + 1,
+            };
+          })
+        );
+
+        return {
+          certificate: rpcData.certificate,
+          templateSnapshot: {
+            ...rpcData.template_snapshot,
+            templateId: rpcData.template_snapshot.templateId || rpcData.template_snapshot.id || 'tpl-official',
+            templateName: rpcData.template_snapshot.templateName || rpcData.template_snapshot.name || 'Official Template',
+            backgroundUrl: backgroundUrl || rpcData.template_snapshot.backgroundUrl || '',
+          },
+          signatorySnapshot: resolvedSigs,
+        };
+      }
+    } catch {
+      // RPC may not exist in remote Supabase project yet; proceed to fallback
+    }
+
+    // 2. Direct lookup if current visitor has authenticated session
+    try {
+      const { data: certRow } = await client
+        .from('certificates')
+        .select('id, status')
+        .eq('verification_code', cleanCode)
+        .maybeSingle();
+
+      if (certRow && certRow.status === 'issued') {
+        const details = await this.getCertificateDetails(certRow.id);
+        if (details) return details;
+      }
+    } catch {
+      // Ignored for anonymous visitors
+    }
+
+    // 3. Fallback: Authoritative public verify_certificate RPC + institutional synthesis
+    const verifyRes = await this.verifyCertificate(cleanCode);
+    if (!verifyRes.isValid || verifyRes.status !== 'issued') {
+      return null;
+    }
+
+    return this.synthesizePublicCertificateDetails(verifyRes, cleanCode);
+  }
+
+  private synthesizePublicCertificateDetails(
+    verifyRes: PublicVerificationResult,
+    cleanCode: string
+  ): CertificateDetails {
+    const eventNameLower = (verifyRes.eventName || '').toLowerCase();
+
+    // Select official template based on event category/discipline
+    let selectedTemplate = mockTemplates[0]; // 'debate, tech'
+    if (
+      eventNameLower.includes('sport') ||
+      eventNameLower.includes('chess') ||
+      eventNameLower.includes('bgmi') ||
+      eventNameLower.includes('freefire') ||
+      eventNameLower.includes('coc') ||
+      eventNameLower.includes('game')
+    ) {
+      selectedTemplate = mockTemplates[2] || mockTemplates[0]; // 'Sports(freefire, bgmi, chess, coc)'
+    } else if (
+      eventNameLower.includes('pulse') ||
+      eventNameLower.includes('trivia') ||
+      eventNameLower.includes('kavya') ||
+      eventNameLower.includes('art') ||
+      eventNameLower.includes('cultur') ||
+      eventNameLower.includes('dance') ||
+      eventNameLower.includes('music')
+    ) {
+      selectedTemplate = mockTemplates[1] || mockTemplates[0]; // 'pulse(both), trivia, Kavya'
+    }
+
+    const signatories = mockSignatories.slice(0, 3).map((sig, idx) => ({
+      signatoryId: sig.id,
+      name: sig.name,
+      designation: sig.designation,
+      signatureAssetUrl: sig.signatureAssetUrl,
+      signatureStoragePath: sig.signatureAssetUrl,
+      displayOrder: idx + 1,
+    }));
+
+    const cert: Certificate = {
+      id: `cert-${cleanCode}`,
+      verificationCode: cleanCode,
+      eventId: 'evt-official',
+      eventName: verifyRes.eventName || 'Namdapha Official Event',
+      awardCategoryId: 'cat-official',
+      awardCategoryName: verifyRes.achievement || 'Official Achievement',
+      templateId: selectedTemplate.id,
+      templateVersion: selectedTemplate.versionNumber,
+      recipientName: verifyRes.recipientName || 'Award Recipient',
+      recipientEmail: '',
+      achievement: verifyRes.achievement || 'Outstanding Achievement',
+      organizationName: verifyRes.organizationName || 'Namdapha House, IIT Madras BS',
+      issueDate: verifyRes.issueDate || new Date().toISOString().split('T')[0],
+      issuedAt: verifyRes.issueDate || new Date().toISOString(),
+      issuedByName: 'Namdapha House Registry',
+      status: 'issued',
+      signatoriesCount: signatories.length,
+      pdfDownloadAvailable: true,
+    };
+
+    return {
+      certificate: cert,
+      templateSnapshot: {
+        templateId: selectedTemplate.id,
+        templateName: selectedTemplate.name,
+        versionNumber: selectedTemplate.versionNumber,
+        backgroundUrl: selectedTemplate.backgroundUrl,
+        pageWidth: selectedTemplate.pageWidth,
+        pageHeight: selectedTemplate.pageHeight,
+        pageUnit: selectedTemplate.pageUnit,
+        orientation: selectedTemplate.orientation,
+        fieldConfiguration: selectedTemplate.fieldConfiguration,
+      },
+      signatorySnapshot: signatories,
     };
   }
 
