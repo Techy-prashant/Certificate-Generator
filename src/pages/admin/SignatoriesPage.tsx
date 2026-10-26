@@ -24,8 +24,10 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Breadcrumbs } from '../../components/ui/Breadcrumbs';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { useToast } from '../../contexts/ToastContext';
 
 export const SignatoriesPage: React.FC = () => {
+  const { success } = useToast();
   const [signatories, setSignatories] = useState<Signatory[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
@@ -155,6 +157,7 @@ export const SignatoriesPage: React.FC = () => {
 
       setIsModalOpen(false);
       await fetchSignatories();
+      success(editingSignatory ? 'Signatory updated successfully.' : 'New official signatory enrolled.');
     } catch (err: any) {
       setFormError(err.message || 'Failed to save signatory.');
     } finally {
@@ -172,6 +175,7 @@ export const SignatoriesPage: React.FC = () => {
       });
       setSignatoryToToggle(null);
       await fetchSignatories();
+      success(`Signatory status changed to ${nextStatus}.`);
     } finally {
       setIsToggling(false);
     }
@@ -261,10 +265,10 @@ export const SignatoriesPage: React.FC = () => {
             return (
               <Card
                 key={sig.id}
-                className={`flex flex-col transition-all border ${
+                className={`flex flex-col transition-all rounded-2xl mac-card border ${
                   !isActive
                     ? 'opacity-75 bg-neutral-surface/30 border-neutral-subtle'
-                    : 'hover:border-brand-violet/40 hover:shadow-xs bg-white'
+                    : 'bg-white/90 backdrop-blur-xs border-neutral-subtle/80 hover:border-brand-violet/40 hover:shadow-mac-panel'
                 }`}
               >
                 <CardContent className="p-5 flex-1 space-y-4">

@@ -30,6 +30,7 @@ import { Badge } from '../ui/Badge';
 import { LoadingState } from '../ui/LoadingState';
 import { downloadPdfBlob, generatePdfFromDetails, getVerificationOrigin, CertificateRenderData } from '../../services/pdfService';
 import { ProtectedCertificateModal } from './ProtectedCertificateModal';
+import { SignatureSelectionGroup } from './SignatureSelectionGroup';
 
 interface IssueCertificateModalProps {
   isOpen: boolean;
@@ -58,6 +59,8 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
   const [recipientEmail, setRecipientEmail] = useState<string>('');
   const [achievement, setAchievement] = useState<string>('');
   const [issueDate, setIssueDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [leftSignatureId, setLeftSignatureId] = useState<string>('');
+  const [rightSignatureId, setRightSignatureId] = useState<string>('');
   const [selectedSignatoryIds, setSelectedSignatoryIds] = useState<string[]>([]);
 
   const [isLoadingData, setIsLoadingData] = useState(false);
@@ -112,9 +115,13 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
         const initialEventId = defaultEventId || activeEvents[0]?.id || '';
         setSelectedEventId(initialEventId);
 
-        // Pre-select signatories (first 2 by default)
+        // Pre-select signatories (first 2 as Left & Right by default)
         if (activeSigs.length > 0) {
-          setSelectedSignatoryIds(activeSigs.slice(0, 2).map((s) => s.id));
+          const leftId = activeSigs[0]?.id || '';
+          const rightId = activeSigs[1]?.id || '';
+          setLeftSignatureId(leftId);
+          setRightSignatureId(rightId);
+          setSelectedSignatoryIds([leftId, rightId].filter(Boolean));
         }
       } catch (err: any) {
         setErrorMsg(err.message || 'Failed to load issuance prerequisite data.');
@@ -176,10 +183,14 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
   }, [selectedEventId, events, templates]);
 
   // Toggle signatory selection
-  const handleToggleSignatory = (sigId: string) => {
-    setSelectedSignatoryIds((prev) =>
-      prev.includes(sigId) ? prev.filter((id) => id !== sigId) : [...prev, sigId]
-    );
+  const handleLeftSignatureChange = (id: string) => {
+    setLeftSignatureId(id);
+    setSelectedSignatoryIds([id, rightSignatureId].filter(Boolean));
+  };
+
+  const handleRightSignatureChange = (id: string) => {
+    setRightSignatureId(id);
+    setSelectedSignatoryIds([leftSignatureId, id].filter(Boolean));
   };
 
   const handleQuickAddDefaultCategories = async () => {
@@ -275,8 +286,12 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
       setErrorMsg('Please select a published template.');
       return;
     }
-    if (selectedSignatoryIds.length === 0) {
-      setErrorMsg('Please select at least one authorized signatory.');
+    if (!leftSignatureId && !rightSignatureId) {
+      setErrorMsg('Please select at least one authorized signature (Left or Right).');
+      return;
+    }
+    if (leftSignatureId && rightSignatureId && leftSignatureId === rightSignatureId) {
+      setErrorMsg('A signature cannot be assigned to both left and right positions simultaneously.');
       return;
     }
 
@@ -680,47 +695,15 @@ export const IssueCertificateModal: React.FC<IssueCertificateModalProps> = ({
             </div>
           </div>
 
-          {/* 4. Authorized Signatories Selection */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-medium text-neutral-main">
-                5. Authorized Signatories ({selectedSignatoryIds.length} selected)
-              </label>
-              <span className="text-[10px] text-neutral-secondary">
-                Select signatories permitted to sign this certificate
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-36 overflow-y-auto p-1 bg-white border border-neutral-subtle rounded-lg">
-              {signatories.map((sig) => {
-                const isSelected = selectedSignatoryIds.includes(sig.id);
-                const order = selectedSignatoryIds.indexOf(sig.id) + 1;
-                return (
-                  <div
-                    key={sig.id}
-                    onClick={() => handleToggleSignatory(sig.id)}
-                    className={`p-2 rounded border cursor-pointer transition-colors flex items-center justify-between text-xs ${
-                      isSelected
-                        ? 'border-brand-violet bg-brand-violet/5'
-                        : 'border-neutral-subtle hover:bg-neutral-surface'
-                    }`}
-                  >
-                    <div className="truncate pr-2">
-                      <span className="font-semibold text-neutral-main block truncate">{sig.name}</span>
-                      <span className="text-[10px] text-neutral-secondary truncate block">{sig.designation}</span>
-                    </div>
-                    {isSelected ? (
-                      <span className="w-5 h-5 rounded-full bg-brand-violet text-white text-[10px] font-bold flex items-center justify-center shrink-0">
-                        {order}
-                      </span>
-                    ) : (
-                      <div className="w-4 h-4 rounded border border-neutral-subtle shrink-0" />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          {/* 5. Simplified Signature Selection: Left & Right Dropdowns */}
+          <SignatureSelectionGroup
+            signatories={signatories}
+            leftSignatureId={leftSignatureId}
+            rightSignatureId={rightSignatureId}
+            onLeftChange={handleLeftSignatureChange}
+            onRightChange={handleRightSignatureChange}
+            required
+          />
 
           {/* Footer Controls */}
           <div className="pt-4 border-t border-neutral-subtle flex flex-col sm:flex-row items-center justify-between gap-3">
