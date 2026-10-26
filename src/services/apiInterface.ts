@@ -30,6 +30,7 @@ export interface CertificatePortalService {
   
   // Public Verification
   verifyCertificate(code: string): Promise<PublicVerificationResult>;
+  getCertificatePublicDetails(code: string): Promise<CertificateDetails | null>;
   
   // Events
   getEvents(): Promise<Event[]>;
