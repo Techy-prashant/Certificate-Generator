@@ -24,8 +24,10 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Breadcrumbs } from '../../components/ui/Breadcrumbs';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { useToast } from '../../contexts/ToastContext';
 
 export const TemplatesPage: React.FC = () => {
+  const { success } = useToast();
   const navigate = useNavigate();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -157,6 +159,7 @@ export const TemplatesPage: React.FC = () => {
       setUploadName('');
       setUploadDescription('');
       await fetchTemplates();
+      success('Template uploaded and added to studio!');
     } catch (err: any) {
       setUploadError(err.message || 'Failed to upload and create template record.');
     } finally {
@@ -171,6 +174,7 @@ export const TemplatesPage: React.FC = () => {
       await portalService.updateTemplateStatus(templateToPublish.id, 'published');
       setTemplateToPublish(null);
       await fetchTemplates();
+      success('Template published for official issuance.');
     } finally {
       setIsStatusUpdating(false);
     }
@@ -183,6 +187,7 @@ export const TemplatesPage: React.FC = () => {
       await portalService.updateTemplateStatus(templateToArchive.id, 'archived');
       setTemplateToArchive(null);
       await fetchTemplates();
+      success('Template archived.');
     } finally {
       setIsStatusUpdating(false);
     }
@@ -264,10 +269,10 @@ export const TemplatesPage: React.FC = () => {
             return (
               <Card
                 key={tpl.id}
-                className={`overflow-hidden transition-all flex flex-col border ${
+                className={`overflow-hidden transition-all rounded-2xl mac-card flex flex-col border ${
                   isArchived
                     ? 'opacity-75 bg-neutral-surface/30 border-neutral-subtle'
-                    : 'hover:border-brand-violet/50 hover:shadow-sm bg-white'
+                    : 'bg-white/90 backdrop-blur-xs border-neutral-subtle/80 hover:border-brand-violet/40 hover:shadow-mac-panel'
                 }`}
               >
                 {/* Visual Preview Container */}

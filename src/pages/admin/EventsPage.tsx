@@ -21,8 +21,10 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Breadcrumbs } from '../../components/ui/Breadcrumbs';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { useToast } from '../../contexts/ToastContext';
 
 export const EventsPage: React.FC = () => {
+  const { success } = useToast();
   const navigate = useNavigate();
   const [events, setEvents] = useState<Event[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -136,6 +138,7 @@ export const EventsPage: React.FC = () => {
       }
       setIsModalOpen(false);
       await fetchData();
+      success(editingEvent ? 'Event updated successfully.' : 'New competition event created.');
     } catch (err: any) {
       setFormError(err.message || 'Failed to save event. Please check the provided information.');
     } finally {
@@ -150,6 +153,7 @@ export const EventsPage: React.FC = () => {
       await portalService.archiveEvent(eventToArchive.id);
       setEventToArchive(null);
       await fetchData();
+      success('Event moved to archive.');
     } finally {
       setIsArchiving(false);
     }
@@ -247,10 +251,10 @@ export const EventsPage: React.FC = () => {
             return (
               <Card
                 key={evt.id}
-                className={`flex flex-col transition-all border ${
+                className={`flex flex-col transition-all rounded-2xl mac-card border ${
                   isArchived
                     ? 'opacity-80 bg-neutral-surface/30 border-neutral-subtle'
-                    : 'hover:border-brand-violet/50 hover:shadow-sm bg-white'
+                    : 'bg-white/90 backdrop-blur-xs border-neutral-subtle/80 hover:border-brand-violet/40 hover:shadow-mac-panel'
                 }`}
               >
                 <CardContent className="p-5 flex-1 space-y-4">
