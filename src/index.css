@@ -15,9 +15,14 @@
   }
 
   body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
     color: #252330;
-    background-color: #F7F5F0;
+    background-color: #F8F7F4;
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(236, 231, 246, 0.45) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, rgba(247, 245, 240, 0.8) 0px, transparent 50%),
+      radial-gradient(at 50% 100%, rgba(240, 237, 245, 0.5) 0px, transparent 60%);
+    background-attachment: fixed;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -29,10 +34,59 @@
   }
 }
 
-/* Custom scrollbar for data tables and sidebars */
+/* macOS Surface & Glass Utilities */
+@layer utilities {
+  .mac-glass {
+    background-color: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+  }
+
+  .mac-glass-subtle {
+    background-color: rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(12px) saturate(150%);
+    -webkit-backdrop-filter: blur(12px) saturate(150%);
+    border: 1px solid rgba(0, 0, 0, 0.04);
+  }
+
+  .mac-panel {
+    background-color: #FFFFFF;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.04), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
+  }
+
+  .mac-card {
+    background-color: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(231, 227, 235, 0.8);
+    transition: all 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .mac-card:hover {
+    background-color: #FFFFFF;
+    border-color: rgba(119, 96, 181, 0.35);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(119, 96, 181, 0.1);
+  }
+
+  .mac-hover-lift {
+    transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .mac-hover-lift:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.06);
+  }
+
+  .mac-hover-lift:active {
+    transform: translateY(0px) scale(0.99);
+  }
+}
+
+/* Custom scrollbar for data tables and sidebars (macOS pill style) */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -40,10 +94,10 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #D5D0DC;
+  background: rgba(184, 176, 197, 0.45);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #B8B0C5;
+  background: rgba(119, 96, 181, 0.4);
 }

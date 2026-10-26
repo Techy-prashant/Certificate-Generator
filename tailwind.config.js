@@ -47,7 +47,24 @@ export default {
         },
       },
       fontFamily: {
-        sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
+        sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "SF Pro Text", "SF Pro Display", "Segoe UI", "Roboto", "sans-serif"],
+      },
+      boxShadow: {
+        '2xs': '0 1px 2px 0 rgba(0, 0, 0, 0.03)',
+        'xs': '0 1px 3px 0 rgba(0, 0, 0, 0.05)',
+        'mac-panel': '0 8px 30px -4px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03)',
+        'mac-window': '0 18px 45px -10px rgba(0, 0, 0, 0.1), 0 8px 16px -8px rgba(0, 0, 0, 0.05)',
+        'mac-floating': '0 24px 60px -12px rgba(0, 0, 0, 0.18)',
+        'spotlight': '0 0 35px -5px rgba(119, 96, 181, 0.22)',
+      },
+      borderRadius: {
+        'mac-sm': '10px',
+        'mac-md': '14px',
+        'mac-lg': '18px',
+        'mac-xl': '22px',
+      },
+      transitionTimingFunction: {
+        'mac-spring': 'cubic-bezier(0.16, 1, 0.3, 1)',
       },
     },
   },
