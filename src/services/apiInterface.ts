@@ -16,7 +16,11 @@ import {
   AuditLog,
   PublicVerificationResult,
   UserProfile,
-  OrganizationSettings
+  OrganizationSettings,
+  UpdateCertificateInput,
+  SpreadsheetConfig,
+  SpreadsheetSyncResult,
+  SpreadsheetSyncLog
 } from '../types';
 
 export interface CertificatePortalService {
@@ -98,6 +102,7 @@ export interface CertificatePortalService {
   getCertificateById(id: string): Promise<Certificate | null>;
   getCertificateDetails(id: string): Promise<CertificateDetails | null>;
   issueCertificate(input: IssueCertificateInput): Promise<Certificate>;
+  updateCertificate(id: string, updates: UpdateCertificateInput): Promise<Certificate>;
   revokeCertificate(id: string, reasonInternal: string, reasonPublic?: string): Promise<boolean>;
   
   // Batches
@@ -120,7 +125,17 @@ export interface CertificatePortalService {
     }
   ): Promise<IssuanceBatch>;
   
+  // Google Sheets Integration
+  getSpreadsheetConfig(): Promise<SpreadsheetConfig | null>;
+  updateSpreadsheetConfig(config: Partial<SpreadsheetConfig>): Promise<SpreadsheetConfig>;
+  testSpreadsheetConnection(): Promise<{ success: boolean; message: string; title?: string }>;
+  syncAllCertificatesToSpreadsheet(): Promise<SpreadsheetSyncResult>;
+  disconnectSpreadsheet(): Promise<boolean>;
+  getSpreadsheetSyncLogs(limit?: number): Promise<SpreadsheetSyncLog[]>;
+  retrySpreadsheetSync(logId?: string): Promise<SpreadsheetSyncResult>;
+
   // Team & Audit
   getTeamMembers(): Promise<UserProfile[]>;
   getAuditLogs(): Promise<AuditLog[]>;
 }
+
