@@ -33,10 +33,14 @@ export const AuditPage: React.FC = () => {
   const [actionFilter, setActionFilter] = useState('all');
   const [targetTypeFilter, setTargetTypeFilter] = useState('all');
   const [actorRoleFilter, setActorRoleFilter] = useState('all');
+  const [actorFilter, setActorFilter] = useState('all');
+  const [resultFilter, setResultFilter] = useState('all');
   const [dateRangeFilter, setDateRangeFilter] = useState('all'); // all, today, 7days, 30days
 
   // Metadata Inspector Modal
   const [inspectedLog, setInspectedLog] = useState<AuditLog | null>(null);
+  const [copiedId, setCopiedId] = useState(false);
+  const [showRawJson, setShowRawJson] = useState(false);
 
   const fetchLogs = async () => {
     try {
@@ -59,7 +63,7 @@ export const AuditPage: React.FC = () => {
     fetchLogs();
   };
 
-  // Unique actions and target types for filter options
+  // Unique actions, target types, and users for filter options
   const uniqueActions = useMemo(() => {
     const set = new Set(logs.map((l) => l.action));
     return Array.from(set).sort();
@@ -67,6 +71,11 @@ export const AuditPage: React.FC = () => {
 
   const uniqueTargetTypes = useMemo(() => {
     const set = new Set(logs.map((l) => l.targetType));
+    return Array.from(set).sort();
+  }, [logs]);
+
+  const uniqueActors = useMemo(() => {
+    const set = new Set(logs.map((l) => l.actorName));
     return Array.from(set).sort();
   }, [logs]);
 
@@ -100,6 +109,19 @@ export const AuditPage: React.FC = () => {
         return false;
       }
 
+      // User / Actor filter
+      if (actorFilter !== 'all' && log.actorName !== actorFilter) {
+        return false;
+      }
+
+      // Result / status filter
+      if (resultFilter === 'success' && log.action.includes('revoked')) {
+        return false;
+      }
+      if (resultFilter === 'revoked' && !log.action.includes('revoked')) {
+        return false;
+      }
+
       // Date range filter
       if (dateRangeFilter !== 'all') {
         const logDate = new Date(log.createdAt);
@@ -113,7 +135,7 @@ export const AuditPage: React.FC = () => {
 
       return true;
     });
-  }, [logs, searchTerm, actionFilter, targetTypeFilter, actorRoleFilter, dateRangeFilter]);
+  }, [logs, searchTerm, actionFilter, targetTypeFilter, actorRoleFilter, actorFilter, resultFilter, dateRangeFilter]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -171,19 +193,34 @@ export const AuditPage: React.FC = () => {
     return 'neutral';
   };
 
+  const formatLogDate = (isoString: string) => {
+    try {
+      const d = new Date(isoString);
+      return d.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return isoString;
+    }
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full min-w-0 pb-12">
       <Breadcrumbs items={[{ label: 'Security & Audit Logs' }]} />
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-neutral-subtle">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-neutral-subtle">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-neutral-main flex items-center gap-2">
-            <Shield className="w-6 h-6 text-brand-violet" />
+            <Shield className="w-5 h-5 text-brand-violet" />
             Security Audit Trail
           </h1>
           <p className="text-xs sm:text-sm text-neutral-secondary mt-0.5">
-            Immutable, append-only security ledger recording all certificate issuances, revocations, batch operations, and system alterations
+            Immutable, append-only security ledger recording all certificate issuances, revocations, and administrative events.
           </p>
         </div>
         <div className="flex items-center space-x-2">
@@ -205,7 +242,7 @@ export const AuditPage: React.FC = () => {
           >
             Export CSV
           </Button>
-          <div className="flex items-center space-x-1.5 text-xs font-semibold text-neutral-secondary bg-neutral-surface px-3 py-1.5 rounded border border-neutral-subtle">
+          <div className="flex items-center space-x-1.5 text-xs font-semibold text-neutral-secondary bg-neutral-surface px-3 py-1.5 rounded-xl border border-neutral-subtle shadow-2xs">
             <Lock className="w-3.5 h-3.5 text-brand-violet" />
             <span>Append-Only</span>
           </div>
@@ -238,18 +275,20 @@ export const AuditPage: React.FC = () => {
         </Card>
       </div>
 
-      {/* Filters Toolbar */}
-      <Card className="p-4 bg-neutral-surface/40">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
-          <div className="md:col-span-2">
+      {/* Compact Filters Toolbar */}
+      <Card className="p-4 bg-white/90 backdrop-blur-md shadow-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+          {/* Search */}
+          <div className="lg:col-span-1">
             <Input
-              placeholder="Search by action, actor, target description..."
+              placeholder="Search activity..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              leftIcon={<Search className="w-4 h-4 text-neutral-secondary" />}
+              leftIcon={<Search className="w-3.5 h-3.5 text-neutral-secondary" />}
             />
           </div>
 
+          {/* Action Type Filter */}
           <div>
             <Select
               value={actionFilter}
@@ -261,33 +300,60 @@ export const AuditPage: React.FC = () => {
             />
           </div>
 
+          {/* User Filter */}
+          <div>
+            <Select
+              value={actorFilter}
+              onChange={(e) => setActorFilter(e.target.value)}
+              options={[
+                { value: 'all', label: 'All Users' },
+                ...uniqueActors.map((u) => ({ value: u, label: u }))
+              ]}
+            />
+          </div>
+
+          {/* Target Type Filter */}
           <div>
             <Select
               value={targetTypeFilter}
               onChange={(e) => setTargetTypeFilter(e.target.value)}
               options={[
-                { value: 'all', label: 'All Target Types' },
+                { value: 'all', label: 'All Targets' },
                 ...uniqueTargetTypes.map((t) => ({ value: t, label: t.replace('_', ' ') }))
               ]}
             />
           </div>
 
+          {/* Date Range Filter */}
           <div>
             <Select
               value={dateRangeFilter}
               onChange={(e) => setDateRangeFilter(e.target.value)}
               options={[
-                { value: 'all', label: 'All Time' },
+                { value: 'all', label: 'All Dates' },
                 { value: 'today', label: 'Past 24 Hours' },
                 { value: '7days', label: 'Past 7 Days' },
                 { value: '30days', label: 'Past 30 Days' }
               ]}
             />
           </div>
+
+          {/* Result / Outcome Filter */}
+          <div>
+            <Select
+              value={resultFilter}
+              onChange={(e) => setResultFilter(e.target.value)}
+              options={[
+                { value: 'all', label: 'All Results' },
+                { value: 'success', label: 'Success' },
+                { value: 'revoked', label: 'Revoked / Void' }
+              ]}
+            />
+          </div>
         </div>
 
-        {(searchTerm || actionFilter !== 'all' || targetTypeFilter !== 'all' || actorRoleFilter !== 'all' || dateRangeFilter !== 'all') && (
-          <div className="mt-3 flex items-center justify-between text-xs pt-2 border-t border-neutral-subtle text-neutral-secondary">
+        {(searchTerm || actionFilter !== 'all' || targetTypeFilter !== 'all' || actorRoleFilter !== 'all' || actorFilter !== 'all' || resultFilter !== 'all' || dateRangeFilter !== 'all') && (
+          <div className="mt-3 flex items-center justify-between text-xs pt-2.5 border-t border-neutral-subtle text-neutral-secondary">
             <span>
               Showing <strong className="text-neutral-main">{filteredLogs.length}</strong> of{' '}
               <strong className="text-neutral-main">{logs.length}</strong> entries
@@ -298,9 +364,11 @@ export const AuditPage: React.FC = () => {
                 setActionFilter('all');
                 setTargetTypeFilter('all');
                 setActorRoleFilter('all');
+                setActorFilter('all');
+                setResultFilter('all');
                 setDateRangeFilter('all');
               }}
-              className="text-brand-violet hover:underline font-medium"
+              className="text-brand-violet hover:underline font-semibold"
             >
               Reset all filters
             </button>
@@ -308,7 +376,7 @@ export const AuditPage: React.FC = () => {
         )}
       </Card>
 
-      {/* Main Table */}
+      {/* Main Activity Table: 5 Clear Default Columns */}
       {isLoading ? (
         <LoadingState message="Loading security audit records..." />
       ) : filteredLogs.length === 0 ? (
@@ -322,128 +390,210 @@ export const AuditPage: React.FC = () => {
           icon={FileText}
         />
       ) : (
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden border border-neutral-subtle/80 shadow-xs">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-neutral-surface/80 text-neutral-secondary uppercase tracking-wider text-[11px] font-semibold border-b border-neutral-subtle">
+              <thead className="bg-neutral-surface/60 text-neutral-secondary uppercase tracking-wider text-[10px] font-semibold border-b border-neutral-subtle">
                 <tr>
-                  <th className="py-3 px-4">Timestamp (UTC)</th>
                   <th className="py-3 px-4">Action</th>
-                  <th className="py-3 px-4">Actor</th>
-                  <th className="py-3 px-4">Target Type</th>
-                  <th className="py-3 px-4">Audit Details</th>
-                  <th className="py-3 px-4">Client IP</th>
-                  <th className="py-3 px-4 text-right">Inspect</th>
+                  <th className="py-3 px-4">User</th>
+                  <th className="py-3 px-4">Target / Record</th>
+                  <th className="py-3 px-4">Date & Time</th>
+                  <th className="py-3 px-4 text-right">Result</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-subtle font-mono text-[11px]">
-                {filteredLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-neutral-surface/40 transition-colors">
-                    <td className="py-3 px-4 text-neutral-secondary whitespace-nowrap">
-                      {new Date(log.createdAt).toLocaleString(undefined, {
-                        year: 'numeric',
-                        month: 'short',
-                        day: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit'
-                      })}
-                    </td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <Badge variant={getActionBadgeVariant(log.action)}>
-                        {log.action}
-                      </Badge>
-                    </td>
-                    <td className="py-3 px-4 font-sans text-neutral-main whitespace-nowrap">
-                      <span className="font-semibold block">{log.actorName}</span>
-                      <span className="text-[10px] text-neutral-secondary font-mono capitalize">
-                        {log.actorRole.replace('_', ' ')}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 font-sans text-neutral-secondary whitespace-nowrap capitalize">
-                      {log.targetType.replace('_', ' ')}
-                    </td>
-                    <td className="py-3 px-4 font-sans text-neutral-main text-xs max-w-sm truncate" title={log.targetDescription}>
-                      {log.targetDescription}
-                    </td>
-                    <td className="py-3 px-4 text-neutral-secondary whitespace-nowrap">
-                      {log.ipAddress || 'Internal / Direct'}
-                    </td>
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setInspectedLog(log)}
-                        leftIcon={<Eye className="w-3.5 h-3.5 text-brand-violet" />}
-                      >
-                        Inspect
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+              <tbody className="divide-y divide-neutral-subtle">
+                {filteredLogs.map((log) => {
+                  const isRevoke = log.action.includes('revoked');
+                  return (
+                    <tr key={log.id} className="hover:bg-neutral-surface/40 transition-colors">
+                      {/* 1. Action */}
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <Badge variant={getActionBadgeVariant(log.action)}>
+                          {log.action}
+                        </Badge>
+                      </td>
+
+                      {/* 2. User */}
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-neutral-main">{log.actorName}</span>
+                          <span className="text-[10px] text-neutral-secondary capitalize">
+                            • {log.actorRole.replace('_', ' ')}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* 3. Target / Record */}
+                      <td className="py-3 px-4 min-w-[200px] max-w-md">
+                        <div className="truncate font-medium text-neutral-main" title={log.targetDescription}>
+                          {log.targetDescription}
+                        </div>
+                        {log.targetId && (
+                          <span className="font-mono text-[10px] text-neutral-secondary block truncate mt-0.5" title={log.targetId}>
+                            ID: {log.targetId.slice(0, 16)}...
+                          </span>
+                        )}
+                      </td>
+
+                      {/* 4. Date and Time */}
+                      <td className="py-3 px-4 text-neutral-secondary whitespace-nowrap">
+                        {formatLogDate(log.createdAt)}
+                      </td>
+
+                      {/* 5. Result & View details */}
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center gap-2">
+                          <Badge variant={isRevoke ? 'error' : 'success'} size="sm">
+                            {isRevoke ? 'Revoked' : 'Success'}
+                          </Badge>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7 px-2"
+                            onClick={() => {
+                              setInspectedLog(log);
+                              setShowRawJson(false);
+                            }}
+                            leftIcon={<Eye className="w-3.5 h-3.5 text-brand-violet" />}
+                          >
+                            View details
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </Card>
       )}
 
-      {/* Metadata Inspector Modal */}
+      {/* Structured Expandable Details Modal */}
       {inspectedLog && (
         <Modal
           isOpen={!!inspectedLog}
           onClose={() => setInspectedLog(null)}
-          title="Audit Entry Inspector"
+          title="Audit Record Details"
+          maxWidth="lg"
         >
-          <div className="space-y-4 text-xs font-sans">
-            <div className="p-3 bg-neutral-surface rounded border border-neutral-subtle space-y-2">
-              <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-4 text-xs">
+            {/* Structured Primary Metadata Table */}
+            <div className="p-4 bg-neutral-surface/50 rounded-xl border border-neutral-subtle space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <span className="text-neutral-secondary font-medium">Record ID:</span>
-                  <p className="font-mono text-[11px] text-neutral-main select-all">{inspectedLog.id}</p>
-                </div>
-                <div>
-                  <span className="text-neutral-secondary font-medium">Timestamp:</span>
-                  <p className="font-mono text-[11px] text-neutral-main">{new Date(inspectedLog.createdAt).toUTCString()}</p>
-                </div>
-                <div>
-                  <span className="text-neutral-secondary font-medium">Action:</span>
-                  <div className="mt-0.5">
+                  <span className="text-[11px] text-neutral-secondary font-medium block">Action:</span>
+                  <div className="mt-1">
                     <Badge variant={getActionBadgeVariant(inspectedLog.action)}>{inspectedLog.action}</Badge>
                   </div>
                 </div>
+
                 <div>
-                  <span className="text-neutral-secondary font-medium">Actor:</span>
-                  <p className="text-neutral-main font-semibold">
-                    {inspectedLog.actorName} ({inspectedLog.actorRole})
+                  <span className="text-[11px] text-neutral-secondary font-medium block">Result:</span>
+                  <div className="mt-1">
+                    <Badge variant={inspectedLog.action.includes('revoked') ? 'error' : 'success'}>
+                      {inspectedLog.action.includes('revoked') ? 'Revoked / Action Logged' : 'Successfully Committed'}
+                    </Badge>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[11px] text-neutral-secondary font-medium block">User:</span>
+                  <p className="text-neutral-main font-semibold mt-0.5">
+                    {inspectedLog.actorName}{' '}
+                    <span className="text-[10px] text-neutral-secondary font-normal capitalize">
+                      ({inspectedLog.actorRole.replace('_', ' ')})
+                    </span>
                   </p>
                 </div>
+
                 <div>
-                  <span className="text-neutral-secondary font-medium">Target Type:</span>
-                  <p className="text-neutral-main capitalize">{inspectedLog.targetType.replace('_', ' ')}</p>
+                  <span className="text-[11px] text-neutral-secondary font-medium block">Date & Time:</span>
+                  <p className="text-neutral-main font-mono text-[11px] mt-0.5">
+                    {new Date(inspectedLog.createdAt).toUTCString()}
+                  </p>
                 </div>
+
                 <div>
-                  <span className="text-neutral-secondary font-medium">Target ID:</span>
-                  <p className="font-mono text-[11px] text-neutral-main select-all">{inspectedLog.targetId || 'N/A'}</p>
+                  <span className="text-[11px] text-neutral-secondary font-medium block">Target Type:</span>
+                  <p className="text-neutral-main font-medium capitalize mt-0.5">
+                    {inspectedLog.targetType.replace('_', ' ')}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="text-[11px] text-neutral-secondary font-medium block">Client IP:</span>
+                  <p className="text-neutral-main font-mono text-[11px] mt-0.5">
+                    {inspectedLog.ipAddress || 'Internal / Cloudflare'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-2.5 border-t border-neutral-subtle">
+                <span className="text-[11px] text-neutral-secondary font-medium block">Record Identifier:</span>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <code className="font-mono text-[11px] text-neutral-main bg-white px-2 py-0.5 rounded border border-neutral-subtle select-all">
+                    {inspectedLog.id}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(inspectedLog.id);
+                      setCopiedId(true);
+                      setTimeout(() => setCopiedId(false), 2000);
+                    }}
+                    className="text-[11px] text-brand-violet hover:underline font-semibold"
+                  >
+                    {copiedId ? 'Copied' : 'Copy'}
+                  </button>
                 </div>
               </div>
 
               <div className="pt-2 border-t border-neutral-subtle">
-                <span className="text-neutral-secondary font-medium">Description:</span>
-                <p className="text-neutral-main mt-0.5 text-xs">{inspectedLog.targetDescription}</p>
+                <span className="text-[11px] text-neutral-secondary font-medium block">Target / Record Description:</span>
+                <p className="text-neutral-main mt-0.5 font-medium leading-relaxed">{inspectedLog.targetDescription}</p>
               </div>
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="font-semibold text-neutral-main flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5 text-brand-violet" />
-                  Recorded Metadata Payload (JSON)
+            {/* Context & Payload Key-Values */}
+            {inspectedLog.metadata && Object.keys(inspectedLog.metadata).length > 0 && (
+              <div className="p-4 bg-white rounded-xl border border-neutral-subtle space-y-2.5">
+                <span className="text-xs font-bold text-neutral-main block">
+                  Associated Event Details & Context
                 </span>
-                <span className="text-[10px] text-neutral-secondary">Sanitized / Secrets Masked</span>
+                <div className="divide-y divide-neutral-subtle text-xs">
+                  {Object.entries(sanitizeMetadata(inspectedLog.metadata)).map(([key, val]) => (
+                    <div key={key} className="py-1.5 flex items-start justify-between gap-3">
+                      <span className="text-neutral-secondary font-medium capitalize">
+                        {key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ')}
+                      </span>
+                      <span className="font-mono text-neutral-main text-right break-all">
+                        {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <pre className="p-3 bg-neutral-900 text-emerald-400 font-mono text-[11px] rounded-lg overflow-x-auto max-h-64 border border-neutral-800">
-                {JSON.stringify(sanitizeMetadata(inspectedLog.metadata), null, 2)}
-              </pre>
+            )}
+
+            {/* Collapsible Raw Technical JSON Payload */}
+            <div className="border border-neutral-subtle rounded-xl overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowRawJson(!showRawJson)}
+                className="w-full px-4 py-2 bg-neutral-surface/60 hover:bg-neutral-surface text-left font-semibold text-neutral-secondary text-xs flex items-center justify-between"
+              >
+                <span>{showRawJson ? 'Hide Technical JSON Payload' : 'View Technical JSON Payload'}</span>
+                <span className="text-[10px] font-mono text-neutral-secondary">
+                  {showRawJson ? '▲' : '▼'}
+                </span>
+              </button>
+              {showRawJson && (
+                <pre className="p-3 bg-neutral-900 text-emerald-400 font-mono text-[11px] overflow-x-auto max-h-56 leading-relaxed border-t border-neutral-subtle">
+                  {JSON.stringify(sanitizeMetadata(inspectedLog.metadata), null, 2)}
+                </pre>
+              )}
             </div>
 
             <div className="flex justify-end pt-2">
