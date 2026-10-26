@@ -9,7 +9,6 @@ import {
   Plus,
   Download,
   ChevronDown,
-  ChevronUp,
   Edit2,
   Copy,
   Check,
@@ -19,6 +18,7 @@ import {
 } from 'lucide-react';
 import { portalService } from '../../services';
 import { Certificate, Event, Template } from '../../types';
+import { smoothScrollToElement } from '../../utils/scrollUtils';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
@@ -101,6 +101,9 @@ export const CertificatesPage: React.FC = () => {
   }, []);
 
   const toggleRowExpanded = (id: string) => {
+    const isCurrentlyExpanded = expandedIds.has(id);
+    const willExpand = !isCurrentlyExpanded;
+
     setExpandedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -110,6 +113,30 @@ export const CertificatesPage: React.FC = () => {
       }
       return next;
     });
+
+    if (willExpand) {
+      // Smoothly and gently scroll to the newly expanded row location
+      smoothScrollToElement(`cert-row-${id}`, {
+        offset: 85,
+        duration: 800,
+        delay: 75,
+      });
+    } else {
+      // If collapsing and the row header had scrolled off the top, gently return it into view
+      setTimeout(() => {
+        const el = document.getElementById(`cert-row-${id}`);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top < 80) {
+            smoothScrollToElement(`cert-row-${id}`, {
+              offset: 85,
+              duration: 650,
+              delay: 30,
+            });
+          }
+        }
+      }, 50);
+    }
   };
 
   const handleCopyCode = (code: string) => {
@@ -435,6 +462,7 @@ export const CertificatesPage: React.FC = () => {
                     <React.Fragment key={cert.id}>
                       {/* Default Clean Row */}
                       <tr
+                        id={`cert-row-${cert.id}`}
                         className={`group transition-colors cursor-pointer select-none ${
                           isExpanded ? 'bg-brand-violet-light/15' : 'hover:bg-neutral-surface/40'
                         }`}
@@ -444,18 +472,24 @@ export const CertificatesPage: React.FC = () => {
                         <td className="py-3 px-4 text-neutral-secondary">
                           <button
                             type="button"
+                            data-dropdown-button="true"
                             onClick={(e) => {
                               e.stopPropagation();
                               toggleRowExpanded(cert.id);
                             }}
-                            className="p-1 rounded-md text-neutral-secondary hover:text-brand-violet hover:bg-neutral-surface transition-colors"
+                            className={`p-1.5 rounded-lg transition-all duration-200 focus-visible:outline-2 focus-visible:outline-brand-violet ${
+                              isExpanded
+                                ? 'text-brand-violet bg-brand-violet-light/30 shadow-2xs'
+                                : 'text-neutral-secondary hover:text-brand-violet hover:bg-neutral-surface'
+                            }`}
                             aria-label={isExpanded ? 'Collapse row' : 'Expand row'}
+                            title={isExpanded ? 'Collapse certificate details' : 'Expand certificate details'}
                           >
-                            {isExpanded ? (
-                              <ChevronUp className="w-4 h-4 text-brand-violet" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4" />
-                            )}
+                            <ChevronDown
+                              className={`w-4 h-4 transition-transform duration-300 ${
+                                isExpanded ? 'rotate-180 text-brand-violet' : 'text-neutral-secondary'
+                              }`}
+                            />
                           </button>
                         </td>
 

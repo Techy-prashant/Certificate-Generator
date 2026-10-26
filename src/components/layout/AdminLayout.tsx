@@ -6,6 +6,7 @@ import { DemoDataBanner } from '../ui/DemoDataBanner';
 import { CommandPalette } from '../ui/CommandPalette';
 import { IssueCertificateModal } from '../admin/IssueCertificateModal';
 import { useToast } from '../../contexts/ToastContext';
+import { smoothScrollToElement } from '../../utils/scrollUtils';
 
 export const AdminLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -45,6 +46,35 @@ export const AdminLayout: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Global smooth scroll delegation: whenever someone clicks any dropdown button across any tab
+  useEffect(() => {
+    const handleGlobalDropdownClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      const dropdownBtn = target.closest<HTMLElement>(
+        'button[data-dropdown-button], button[aria-label*="Expand"], [data-dropdown-scroll="true"]'
+      );
+      if (!dropdownBtn) return;
+
+      // Find the closest table row, card, or container to scroll to
+      const container =
+        dropdownBtn.closest<HTMLElement>('tr[id], [data-scroll-anchor], .mac-card, article') ||
+        dropdownBtn;
+
+      if (container) {
+        smoothScrollToElement(container, {
+          offset: 85,
+          duration: 800,
+          delay: 75,
+        });
+      }
+    };
+
+    document.addEventListener('click', handleGlobalDropdownClick, true);
+    return () => document.removeEventListener('click', handleGlobalDropdownClick, true);
   }, []);
 
   const location = useLocation();
