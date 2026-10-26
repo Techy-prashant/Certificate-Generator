@@ -1001,6 +1001,26 @@ export const mockEventSignatories: EventSignatory[] = [
 
 export const mockCertificates: Certificate[] = [
   {
+    id: 'cert-643926',
+    verificationCode: '643926',
+    eventId: 'evt-01',
+    eventName: 'The Podium (Debate)',
+    awardCategoryId: 'cat-01',
+    awardCategoryName: 'First Place (Winner)',
+    templateId: 'tpl-01',
+    templateVersion: 1,
+    recipientName: 'Prashant Kumar',
+    recipientEmail: 'prashant@study.iitm.ac.in',
+    achievement: 'First Place for Outstanding Performance at The Podium 2026.',
+    organizationName: 'Namdapha House, IIT Madras BS',
+    issueDate: '2026-04-12',
+    issuedAt: '2026-04-12T10:00:00Z',
+    issuedByName: 'Namdapha House Admin',
+    status: 'issued',
+    signatoriesCount: 2,
+    pdfDownloadAvailable: true,
+  },
+  {
     id: 'cert-889124',
     verificationCode: '889124',
     eventId: 'evt-01',

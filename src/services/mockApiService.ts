@@ -107,6 +107,16 @@ class MockApiService implements CertificatePortalService {
     };
   }
 
+  async getCertificatePublicDetails(code: string): Promise<CertificateDetails | null> {
+    await this.delay(100);
+    const cleanedCode = code.trim();
+    const cert = this.certificates.find((c) => c.verificationCode === cleanedCode || c.id === cleanedCode);
+    if (!cert || cert.status !== 'issued') {
+      return null;
+    }
+    return this.getCertificateDetails(cert.id);
+  }
+
   async getEvents(): Promise<Event[]> {
     await this.delay();
     return [...this.events];
