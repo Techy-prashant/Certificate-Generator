@@ -17,8 +17,14 @@ import {
   AuditLog,
   PublicVerificationResult,
   UserProfile,
-  OrganizationSettings
+  OrganizationSettings,
+  UpdateCertificateInput,
+  SpreadsheetConfig,
+  SpreadsheetSyncLog,
+  SpreadsheetSyncResult,
 } from '../types';
+import { googleSheetsService } from './googleSheetsService';
+
 import {
   mockOrgSettings,
   mockCurrentUser,
@@ -478,6 +484,12 @@ class MockApiService implements CertificatePortalService {
     const template = this.templates.find((t) => t.id === input.templateId);
     if (!template) throw new Error('Selected template not found');
 
+    // Enforce signature uniqueness
+    const uniqueSigIds = Array.from(new Set(input.signatoryIds));
+    if (uniqueSigIds.length !== input.signatoryIds.length) {
+      throw new Error('Duplicate signature detected: A signature cannot be assigned to both left and right positions simultaneously.');
+    }
+
     const orderedSigs = input.signatoryIds
       .map((id) => this.signatories.find((s) => s.id === id))
       .filter(Boolean) as Signatory[];
@@ -527,7 +539,47 @@ class MockApiService implements CertificatePortalService {
       createdAt: new Date().toISOString(),
     });
 
+    // Mirror to Google Sheets asynchronously without blocking
+    googleSheetsService.syncCertificate(newCert, 'insert').catch((err) => {
+      console.warn('[MockApi] Google Sheets background sync failed:', err);
+    });
+
     return newCert;
+  }
+
+  async updateCertificate(id: string, updates: UpdateCertificateInput): Promise<Certificate> {
+    await this.delay();
+    const index = this.certificates.findIndex((c) => c.id === id);
+    if (index === -1) throw new Error('Certificate record not found.');
+
+    const current = this.certificates[index];
+    const updated: Certificate = {
+      ...current,
+      recipientName: updates.recipientName ? updates.recipientName.trim() : current.recipientName,
+      recipientEmail: updates.recipientEmail !== undefined ? updates.recipientEmail.trim() : current.recipientEmail,
+      achievement: updates.achievement ? updates.achievement.trim() : current.achievement,
+      issueDate: updates.issueDate || current.issueDate,
+    };
+
+    this.certificates[index] = updated;
+
+    this.auditLogs.unshift({
+      id: `log-${Date.now()}`,
+      actorName: mockCurrentUser.displayName,
+      actorRole: mockCurrentUser.role,
+      action: 'certificate.updated',
+      targetType: 'certificate',
+      targetId: updated.id,
+      targetDescription: `Updated details for certificate ${updated.verificationCode} (${updated.recipientName})`,
+      createdAt: new Date().toISOString(),
+    });
+
+    // Mirror to Google Sheets
+    googleSheetsService.syncCertificate(updated, 'update').catch((err) => {
+      console.warn('[MockApi] Google Sheets background sync failed:', err);
+    });
+
+    return updated;
   }
 
   async revokeCertificate(id: string, reasonInternal: string, reasonPublic?: string): Promise<boolean> {
@@ -536,7 +588,7 @@ class MockApiService implements CertificatePortalService {
     if (index === -1) return false;
 
     const cert = this.certificates[index];
-    this.certificates[index] = {
+    const revokedCert: Certificate = {
       ...cert,
       status: 'revoked',
       revocationDate: new Date().toISOString(),
@@ -544,6 +596,7 @@ class MockApiService implements CertificatePortalService {
       revocationReasonPublic: reasonPublic || reasonInternal,
       pdfDownloadAvailable: false,
     };
+    this.certificates[index] = revokedCert;
 
     this.auditLogs.unshift({
       id: `log-${Date.now()}`,
@@ -556,8 +609,14 @@ class MockApiService implements CertificatePortalService {
       createdAt: new Date().toISOString(),
     });
 
+    // Mirror to Google Sheets
+    googleSheetsService.syncCertificate(revokedCert, 'revoke').catch((err) => {
+      console.warn('[MockApi] Google Sheets background sync failed:', err);
+    });
+
     return true;
   }
+
 
   async getIssuanceBatches(): Promise<IssuanceBatch[]> {
     await this.delay();
@@ -648,6 +707,43 @@ class MockApiService implements CertificatePortalService {
     await this.delay();
     return [...this.auditLogs];
   }
+
+  // Google Sheets Integration Methods
+  async getSpreadsheetConfig(): Promise<SpreadsheetConfig | null> {
+    await this.delay();
+    return googleSheetsService.getConfig();
+  }
+
+  async updateSpreadsheetConfig(config: Partial<SpreadsheetConfig>): Promise<SpreadsheetConfig> {
+    await this.delay();
+    return googleSheetsService.updateConfig(config);
+  }
+
+  async testSpreadsheetConnection(): Promise<{ success: boolean; message: string; title?: string }> {
+    await this.delay();
+    return googleSheetsService.testConnection();
+  }
+
+  async syncAllCertificatesToSpreadsheet(): Promise<SpreadsheetSyncResult> {
+    await this.delay();
+    return googleSheetsService.reconcileCertificates(this.certificates);
+  }
+
+  async disconnectSpreadsheet(): Promise<boolean> {
+    await this.delay();
+    return googleSheetsService.disconnect();
+  }
+
+  async getSpreadsheetSyncLogs(): Promise<SpreadsheetSyncLog[]> {
+    await this.delay();
+    return googleSheetsService.getSyncLogs();
+  }
+
+  async retrySpreadsheetSync(logId?: string): Promise<SpreadsheetSyncResult> {
+    await this.delay();
+    return googleSheetsService.retryFailed(this.certificates, logId);
+  }
 }
+
 
 export const mockApiService = new MockApiService();

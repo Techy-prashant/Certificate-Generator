@@ -18,8 +18,14 @@ import {
   AuditLog,
   PublicVerificationResult,
   UserProfile,
-  OrganizationSettings
+  OrganizationSettings,
+  UpdateCertificateInput,
+  SpreadsheetConfig,
+  SpreadsheetSyncLog,
+  SpreadsheetSyncResult,
 } from '../types';
+import { googleSheetsService } from './googleSheetsService';
+
 
 /**
  * Production implementation of CertificatePortalService communicating with Supabase PostgreSQL,
@@ -1297,7 +1303,12 @@ export class SupabaseService implements CertificatePortalService {
       .single();
     if (tplErr || !tplData) throw new Error('Selected template not found');
 
-    // 4. Fetch Signatories in order
+    // 4. Fetch Signatories in order (enforce uniqueness)
+    const uniqueSigIds = Array.from(new Set(input.signatoryIds));
+    if (uniqueSigIds.length !== input.signatoryIds.length) {
+      throw new Error('Duplicate signature detected: A signature cannot be assigned to both left and right positions simultaneously.');
+    }
+
     const { data: sigsData, error: sigsErr } = await client
       .from('signatories')
       .select('*')
@@ -1411,7 +1422,7 @@ export class SupabaseService implements CertificatePortalService {
       },
     });
 
-    return {
+    const certResult: Certificate = {
       id: certRow.id,
       verificationCode: certRow.verification_code,
       eventId: certRow.event_id,
@@ -1434,6 +1445,79 @@ export class SupabaseService implements CertificatePortalService {
       signatoriesCount: signatorySnapshot.length,
       pdfDownloadAvailable: true,
     };
+
+    // Mirror to Google Sheets asynchronously without blocking PostgreSQL transaction
+    googleSheetsService.syncCertificate(certResult, 'insert').catch((err) => {
+      console.warn('[SupabaseService] Background Google Sheets sync failed:', err);
+    });
+
+    return certResult;
+  }
+
+  async updateCertificate(id: string, updates: UpdateCertificateInput): Promise<Certificate> {
+    const client = this.checkClient();
+    const { data: { session } } = await client.auth.getSession();
+    if (!session?.user) throw new Error('Authentication required');
+
+    const updatePayload: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (updates.recipientName) updatePayload.recipient_name = updates.recipientName.trim();
+    if (updates.recipientEmail !== undefined) updatePayload.recipient_email = updates.recipientEmail?.trim() || null;
+    if (updates.achievement) updatePayload.achievement = updates.achievement.trim();
+    if (updates.issueDate) updatePayload.issue_date = updates.issueDate;
+
+    const { data, error } = await client
+      .from('certificates')
+      .update(updatePayload)
+      .eq('id', id)
+      .select('*, events:event_id(name), award_categories:award_category_id(name), profiles:issued_by(display_name)')
+      .single();
+
+    if (error) throw new Error(`Failed to update certificate: ${error.message}`);
+
+    await client.from('audit_logs').insert({
+      actor_id: session.user.id,
+      action: 'certificate.updated',
+      target_type: 'certificate',
+      target_id: id,
+      metadata: {
+        updates,
+        verification_code: data.verification_code,
+        recipient_name: data.recipient_name,
+      },
+    });
+
+    const updatedCert: Certificate = {
+      id: data.id,
+      verificationCode: data.verification_code,
+      eventId: data.event_id,
+      eventName: data.events?.name || data.event_name_snapshot,
+      awardCategoryId: data.award_category_id,
+      awardCategoryName: data.award_categories?.name || 'General Award',
+      templateId: data.template_id,
+      templateVersion: data.template_version,
+      recipientName: data.recipient_name,
+      recipientEmail: data.recipient_email,
+      achievement: data.achievement,
+      organizationName: data.organization_name_snapshot,
+      issueDate: data.issue_date,
+      issuedAt: data.issued_at,
+      issuedByName: data.profiles?.display_name || 'Administrator',
+      status: data.status,
+      revocationDate: data.revocation_date,
+      revocationReasonPublic: data.revocation_reason_public,
+      revocationReasonInternal: data.revocation_reason_internal,
+      signatoriesCount: Array.isArray(data.signatory_snapshot) ? data.signatory_snapshot.length : 0,
+      pdfDownloadAvailable: data.status === 'issued',
+    };
+
+    // Mirror update to Google Sheets
+    googleSheetsService.syncCertificate(updatedCert, 'update').catch((err) => {
+      console.warn('[SupabaseService] Background Google Sheets sync failed:', err);
+    });
+
+    return updatedCert;
   }
 
   async revokeCertificate(id: string, reasonInternal: string, reasonPublic?: string): Promise<boolean> {
@@ -1442,7 +1526,7 @@ export class SupabaseService implements CertificatePortalService {
     if (!session?.user) throw new Error('Authentication required');
 
     const now = new Date().toISOString();
-    const { error } = await client
+    const { data, error } = await client
       .from('certificates')
       .update({
         status: 'revoked',
@@ -1450,7 +1534,9 @@ export class SupabaseService implements CertificatePortalService {
         revocation_reason_internal: reasonInternal,
         revocation_reason_public: reasonPublic || null,
       })
-      .eq('id', id);
+      .eq('id', id)
+      .select('*, events:event_id(name), award_categories:award_category_id(name), profiles:issued_by(display_name)')
+      .single();
 
     if (error) throw new Error(error.message);
 
@@ -1466,8 +1552,39 @@ export class SupabaseService implements CertificatePortalService {
       },
     });
 
+    if (data) {
+      const revokedCert: Certificate = {
+        id: data.id,
+        verificationCode: data.verification_code,
+        eventId: data.event_id,
+        eventName: data.events?.name || data.event_name_snapshot,
+        awardCategoryId: data.award_category_id,
+        awardCategoryName: data.award_categories?.name || 'General Award',
+        templateId: data.template_id,
+        templateVersion: data.template_version,
+        recipientName: data.recipient_name,
+        recipientEmail: data.recipient_email,
+        achievement: data.achievement,
+        organizationName: data.organization_name_snapshot,
+        issueDate: data.issue_date,
+        issuedAt: data.issued_at,
+        issuedByName: data.profiles?.display_name || 'Administrator',
+        status: 'revoked',
+        revocationDate: now,
+        revocationReasonPublic: reasonPublic || undefined,
+        revocationReasonInternal: reasonInternal,
+        signatoriesCount: Array.isArray(data.signatory_snapshot) ? data.signatory_snapshot.length : 0,
+        pdfDownloadAvailable: false,
+      };
+
+      googleSheetsService.syncCertificate(revokedCert, 'revoke').catch((err) => {
+        console.warn('[SupabaseService] Background Google Sheets sync failed:', err);
+      });
+    }
+
     return true;
   }
+
 
   // 6. Batches
   async getIssuanceBatches(): Promise<IssuanceBatch[]> {
@@ -1661,6 +1778,38 @@ export class SupabaseService implements CertificatePortalService {
       };
     });
   }
+
+  // Google Sheets Integration
+  async getSpreadsheetConfig(): Promise<SpreadsheetConfig | null> {
+    return googleSheetsService.getConfig();
+  }
+
+  async updateSpreadsheetConfig(config: Partial<SpreadsheetConfig>): Promise<SpreadsheetConfig> {
+    return googleSheetsService.updateConfig(config);
+  }
+
+  async testSpreadsheetConnection(): Promise<{ success: boolean; message: string; title?: string }> {
+    return googleSheetsService.testConnection();
+  }
+
+  async syncAllCertificatesToSpreadsheet(): Promise<SpreadsheetSyncResult> {
+    const certs = await this.getCertificates();
+    return googleSheetsService.reconcileCertificates(certs);
+  }
+
+  async disconnectSpreadsheet(): Promise<boolean> {
+    return googleSheetsService.disconnect();
+  }
+
+  async getSpreadsheetSyncLogs(): Promise<SpreadsheetSyncLog[]> {
+    return googleSheetsService.getSyncLogs();
+  }
+
+  async retrySpreadsheetSync(logId?: string): Promise<SpreadsheetSyncResult> {
+    const certs = await this.getCertificates();
+    return googleSheetsService.retryFailed(certs, logId);
+  }
 }
+
 
 export const supabaseService = new SupabaseService();
