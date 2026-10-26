@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { ToastProvider } from './contexts/ToastContext';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { PublicLayout } from './components/layout/PublicLayout';
 import { AdminLayout } from './components/layout/AdminLayout';
@@ -19,8 +20,12 @@ import { TemplateStudioPage } from './pages/admin/TemplateStudioPage';
 import { SignatoriesPage } from './pages/admin/SignatoriesPage';
 import { CertificatesPage } from './pages/admin/CertificatesPage';
 import { BulkIssuePage } from './pages/admin/BulkIssuePage';
+import { SpreadsheetSyncPage } from './pages/admin/SpreadsheetSyncPage';
 import { TeamPage } from './pages/admin/TeamPage';
 import { AuditPage } from './pages/admin/AuditPage';
+
+
+
 
 // 404 Fallback
 const NotFoundPage: React.FC = () => (
@@ -54,7 +59,8 @@ const NotFoundPage: React.FC = () => (
 export const App: React.FC = () => {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <ToastProvider>
+        <BrowserRouter>
         <Routes>
           {/* Public Routes */}
           <Route element={<PublicLayout />}>
@@ -81,8 +87,10 @@ export const App: React.FC = () => {
             <Route path="templates" element={<TemplatesPage />} />
             <Route path="templates/:id/studio" element={<TemplateStudioPage />} />
             <Route path="signatories" element={<SignatoriesPage />} />
+            <Route path="signatures" element={<Navigate to="/admin/signatories" replace />} />
             <Route path="certificates" element={<CertificatesPage />} />
             <Route path="bulk-issue" element={<BulkIssuePage />} />
+            <Route path="spreadsheet" element={<SpreadsheetSyncPage />} />
             <Route
               path="team"
               element={
@@ -99,13 +107,15 @@ export const App: React.FC = () => {
                 </ProtectedRoute>
               }
             />
+            <Route path="audit-logs" element={<Navigate to="/admin/audit" replace />} />
           </Route>
 
           {/* Fallback */}
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </BrowserRouter>
-    </AuthProvider>
+    </ToastProvider>
+  </AuthProvider>
   );
 };
 
