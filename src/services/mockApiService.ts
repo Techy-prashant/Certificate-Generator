@@ -24,6 +24,7 @@ import {
   SpreadsheetSyncResult,
 } from '../types';
 import { googleSheetsService } from './googleSheetsService';
+import { buildInstantVectorCertificate } from './vectorCertificateService';
 
 import {
   mockOrgSettings,
@@ -455,29 +456,15 @@ class MockApiService implements CertificatePortalService {
     const cert = this.certificates.find((c) => c.id === id);
     if (!cert) return null;
 
-    const template = this.templates.find((t) => t.id === cert.templateId) || this.templates[0];
-    const details: CertificateDetails = {
-      certificate: cert,
-      templateSnapshot: {
-        templateId: template.id,
-        templateName: template.name,
-        versionNumber: cert.templateVersion,
-        backgroundUrl: template.backgroundUrl,
-        pageWidth: template.pageWidth,
-        pageHeight: template.pageHeight,
-        pageUnit: template.pageUnit,
-        orientation: template.orientation,
-        fieldConfiguration: template.fieldConfiguration,
-      },
-      signatorySnapshot: this.signatories.slice(0, cert.signatoriesCount).map((s, idx) => ({
-        signatoryId: s.id,
-        name: s.name,
-        designation: s.designation,
-        signatureAssetUrl: s.signatureAssetUrl,
-        displayOrder: idx + 1,
-      })),
-    };
-    return details;
+    return buildInstantVectorCertificate({
+      code: cert.verificationCode,
+      recipientName: cert.recipientName,
+      eventName: cert.eventName,
+      achievement: cert.achievement,
+      issueDate: cert.issueDate,
+      organizationName: cert.organizationName,
+      templateId: cert.templateId,
+    });
   }
 
   async issueCertificate(input: IssueCertificateInput): Promise<Certificate> {
@@ -549,10 +536,15 @@ class MockApiService implements CertificatePortalService {
       createdAt: new Date().toISOString(),
     });
 
-    // Mirror to Google Sheets asynchronously without blocking
-    googleSheetsService.syncCertificate(newCert, 'insert').catch((err) => {
-      console.warn('[MockApi] Google Sheets background sync failed:', err);
-    });
+    // Mirror to Google Sheets automatically with safe timeout race
+    try {
+      await Promise.race([
+        googleSheetsService.syncCertificate(newCert, 'insert'),
+        new Promise((resolve) => setTimeout(() => resolve(false), 4000)),
+      ]);
+    } catch (syncErr) {
+      console.warn('[MockApi] Automatic Google Sheets sync warning:', syncErr);
+    }
 
     return newCert;
   }
@@ -584,10 +576,15 @@ class MockApiService implements CertificatePortalService {
       createdAt: new Date().toISOString(),
     });
 
-    // Mirror to Google Sheets
-    googleSheetsService.syncCertificate(updated, 'update').catch((err) => {
-      console.warn('[MockApi] Google Sheets background sync failed:', err);
-    });
+    // Mirror to Google Sheets automatically
+    try {
+      await Promise.race([
+        googleSheetsService.syncCertificate(updated, 'update'),
+        new Promise((resolve) => setTimeout(() => resolve(false), 4000)),
+      ]);
+    } catch (syncErr) {
+      console.warn('[MockApi] Automatic Google Sheets sync warning:', syncErr);
+    }
 
     return updated;
   }
@@ -619,10 +616,15 @@ class MockApiService implements CertificatePortalService {
       createdAt: new Date().toISOString(),
     });
 
-    // Mirror to Google Sheets
-    googleSheetsService.syncCertificate(revokedCert, 'revoke').catch((err) => {
-      console.warn('[MockApi] Google Sheets background sync failed:', err);
-    });
+    // Mirror to Google Sheets automatically
+    try {
+      await Promise.race([
+        googleSheetsService.syncCertificate(revokedCert, 'revoke'),
+        new Promise((resolve) => setTimeout(() => resolve(false), 4000)),
+      ]);
+    } catch (syncErr) {
+      console.warn('[MockApi] Automatic Google Sheets sync warning:', syncErr);
+    }
 
     return true;
   }

@@ -202,7 +202,6 @@ export class GoogleSheetsService {
   buildRowPayload(cert: Certificate): Record<string, any> {
     const origin = getVerificationOrigin();
     const verificationUrl = `${origin}/verify/${cert.verificationCode}`;
-    const fileUrl = `${origin}/verify/${cert.verificationCode}#pdf`;
 
     return {
       certificateId: cert.id,
@@ -213,7 +212,7 @@ export class GoogleSheetsService {
       verificationCode: cert.verificationCode,
       status: cert.status === 'issued' ? 'Issued' : 'Revoked',
       issueDate: cert.issueDate,
-      certificateUrl: fileUrl,
+      certificateUrl: verificationUrl,
       verificationUrl,
       lastUpdated: new Date().toISOString(),
       syncStatus: 'Synced',
@@ -282,8 +281,20 @@ export class GoogleSheetsService {
             }
           }
         } catch (fetchErr: any) {
-          syncOk = false;
-          log.errorMessage = 'Webhook delivery failed (Failed to fetch). Google Apps Script is rejecting unauthenticated requests. Set "Who has access" to "Anyone" in Google Apps Script.';
+          // When called in browser, Google Apps Script 302 redirect can trigger cross-origin errors in standard mode.
+          // Retry with mode: 'no-cors' so browser transparently dispatches to Google's server!
+          try {
+            await fetch(this.config.webhookUrl, {
+              method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body,
+            });
+            syncOk = true;
+          } catch (noCorsErr: any) {
+            syncOk = false;
+            log.errorMessage = 'Webhook delivery failed: ' + (fetchErr?.message || 'Network error');
+          }
         }
       } else {
         // Direct mirror simulation / local state

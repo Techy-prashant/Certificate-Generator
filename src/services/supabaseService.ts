@@ -1614,10 +1614,15 @@ export class SupabaseService implements CertificatePortalService {
       pdfDownloadAvailable: true,
     };
 
-    // Mirror to Google Sheets asynchronously without blocking PostgreSQL transaction
-    googleSheetsService.syncCertificate(certResult, 'insert').catch((err) => {
-      console.warn('[SupabaseService] Background Google Sheets sync failed:', err);
-    });
+    // Mirror to Google Sheets automatically with safe timeout race
+    try {
+      await Promise.race([
+        googleSheetsService.syncCertificate(certResult, 'insert'),
+        new Promise((resolve) => setTimeout(() => resolve(false), 4000)),
+      ]);
+    } catch (syncErr) {
+      console.warn('[SupabaseService] Automatic Google Sheets sync warning:', syncErr);
+    }
 
     return certResult;
   }
@@ -1680,10 +1685,15 @@ export class SupabaseService implements CertificatePortalService {
       pdfDownloadAvailable: data.status === 'issued',
     };
 
-    // Mirror update to Google Sheets
-    googleSheetsService.syncCertificate(updatedCert, 'update').catch((err) => {
-      console.warn('[SupabaseService] Background Google Sheets sync failed:', err);
-    });
+    // Mirror update to Google Sheets automatically
+    try {
+      await Promise.race([
+        googleSheetsService.syncCertificate(updatedCert, 'update'),
+        new Promise((resolve) => setTimeout(() => resolve(false), 4000)),
+      ]);
+    } catch (syncErr) {
+      console.warn('[SupabaseService] Automatic Google Sheets sync warning:', syncErr);
+    }
 
     return updatedCert;
   }
@@ -1745,9 +1755,14 @@ export class SupabaseService implements CertificatePortalService {
         pdfDownloadAvailable: false,
       };
 
-      googleSheetsService.syncCertificate(revokedCert, 'revoke').catch((err) => {
-        console.warn('[SupabaseService] Background Google Sheets sync failed:', err);
-      });
+      try {
+        await Promise.race([
+          googleSheetsService.syncCertificate(revokedCert, 'revoke'),
+          new Promise((resolve) => setTimeout(() => resolve(false), 4000)),
+        ]);
+      } catch (syncErr) {
+        console.warn('[SupabaseService] Automatic Google Sheets sync warning:', syncErr);
+      }
     }
 
     return true;
