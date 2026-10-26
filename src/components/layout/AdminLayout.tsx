@@ -55,7 +55,7 @@ export const AdminLayout: React.FC = () => {
       if (!target) return;
 
       const dropdownBtn = target.closest<HTMLElement>(
-        'button[data-dropdown-button], button[aria-label*="Expand"], [data-dropdown-scroll="true"]'
+        'button[data-dropdown-button], button[aria-label*="Expand"], button[aria-label*="Details"], [data-dropdown-scroll="true"], button:has(svg.lucide-chevron-down), tr[data-expandable="true"]'
       );
       if (!dropdownBtn) return;
 

@@ -42,6 +42,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   const commandItems: CommandItem[] = useMemo(() => [
     // Navigation
@@ -218,6 +220,40 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, filteredCommands, selectedIndex, navigate, onClose]);
 
+  // Automatically scroll list smoothly as user navigates down or up
+  useEffect(() => {
+    if (!isOpen) return;
+    const listEl = listRef.current;
+    if (!listEl) return;
+
+    if (selectedIndex === 0) {
+      listEl.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    if (selectedIndex === filteredCommands.length - 1 && filteredCommands.length > 1) {
+      listEl.scrollTo({ top: listEl.scrollHeight, behavior: 'smooth' });
+      return;
+    }
+
+    const itemEl = itemRefs.current.get(selectedIndex);
+    if (!itemEl) return;
+
+    const listRect = listEl.getBoundingClientRect();
+    const itemRect = itemEl.getBoundingClientRect();
+
+    // If item bottom is at or below the list viewport bottom, scroll down to reveal
+    if (itemRect.bottom > listRect.bottom - 6) {
+      const scrollOffset = itemRect.bottom - listRect.bottom + 12;
+      listEl.scrollBy({ top: scrollOffset, behavior: 'smooth' });
+    }
+    // If item top is at or above the list viewport top, scroll up to reveal
+    else if (itemRect.top < listRect.top + 6) {
+      const scrollOffset = itemRect.top - listRect.top - 12;
+      listEl.scrollBy({ top: scrollOffset, behavior: 'smooth' });
+    }
+  }, [selectedIndex, isOpen, filteredCommands.length]);
+
   if (!isOpen) return null;
 
   return (
@@ -274,7 +310,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         </div>
 
         {/* Results List */}
-        <div className="max-h-80 overflow-y-auto p-2 space-y-1">
+        <div ref={listRef} className="max-h-80 overflow-y-auto p-2 space-y-1 scroll-smooth">
           {filteredCommands.length === 0 ? (
             <div className="py-8 text-center text-xs text-neutral-secondary">
               No matching commands or pages found for "{query}"
@@ -287,6 +323,11 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
               return (
                 <div
                   key={item.id}
+                  id={`cmd-item-${index}`}
+                  ref={(el) => {
+                    if (el) itemRefs.current.set(index, el);
+                    else itemRefs.current.delete(index);
+                  }}
                   onClick={() => {
                     item.perform(navigate);
                     onClose();

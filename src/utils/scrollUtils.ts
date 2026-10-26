@@ -137,7 +137,26 @@ export function smoothScrollToElement(
 
       const rect = el.getBoundingClientRect();
       const currentScrollY = window.pageYOffset || document.documentElement.scrollTop;
-      const targetY = currentScrollY + rect.top - offset;
+      const viewportHeight = window.innerHeight;
+
+      // Check if target element has an expanded sibling drawer (e.g. table row expansion drawer)
+      let bottomY = rect.bottom;
+      const nextSibling = el.nextElementSibling as HTMLElement | null;
+      if (nextSibling && (nextSibling.classList.contains('bg-neutral-surface/30') || nextSibling.tagName === 'TR')) {
+        const nextRect = nextSibling.getBoundingClientRect();
+        if (nextRect.bottom > bottomY) {
+          bottomY = nextRect.bottom;
+        }
+      }
+
+      // Default target: align element top with header offset
+      let targetY = currentScrollY + rect.top - offset;
+
+      // If the expanded content extends below the bottom of the viewport, scroll down so all content is revealed
+      const totalContentHeight = bottomY - rect.top;
+      if (totalContentHeight < viewportHeight - offset - 20 && rect.top + totalContentHeight > viewportHeight - 20) {
+        targetY = currentScrollY + (rect.top + totalContentHeight) - viewportHeight + 40;
+      }
 
       smoothScrollTo(targetY, duration).then(resolve);
     }, delay);
