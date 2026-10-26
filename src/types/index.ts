@@ -233,3 +233,65 @@ export interface PublicVerificationResult {
   revocationDate?: string;
   revocationReasonPublic?: string;
 }
+
+export interface UpdateCertificateInput {
+  recipientName?: string;
+  recipientEmail?: string;
+  achievement?: string;
+  issueDate?: string;
+}
+
+export interface SpreadsheetColumnMapping {
+  certificateId: string;
+  recipientName: string;
+  recipientEmail: string;
+  eventName: string;
+  position: string;
+  verificationCode: string;
+  status: string;
+  issueDate: string;
+  certificateUrl: string;
+  verificationUrl: string;
+  lastUpdated: string;
+  syncStatus: string;
+}
+
+export type SpreadsheetSyncStatus = 'idle' | 'in_progress' | 'success' | 'failed';
+
+export interface SpreadsheetConfig {
+  id: string;
+  spreadsheetId: string;
+  spreadsheetName?: string;
+  sheetName: string;
+  webhookUrl?: string;
+  serviceAccountEmail?: string;
+  isActive: boolean;
+  isLocked?: boolean;
+  lastSyncAt?: string;
+  lastSyncStatus: SpreadsheetSyncStatus;
+  lastErrorMessage?: string;
+  columnMapping: SpreadsheetColumnMapping;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SpreadsheetSyncLog {
+  id: string;
+  certificateId?: string;
+  action: 'insert' | 'update' | 'revoke' | 'reconcile';
+  status: 'pending' | 'synced' | 'failed';
+  attempts: number;
+  maxAttempts: number;
+  lastAttemptAt?: string;
+  errorMessage?: string;
+  payload: Record<string, any>;
+  createdAt: string;
+}
+
+export interface SpreadsheetSyncResult {
+  total: number;
+  synced: number;
+  failed: number;
+  errors?: Array<{ certificateId: string; error: string }>;
+}
+
