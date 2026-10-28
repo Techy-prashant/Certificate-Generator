@@ -9,10 +9,12 @@ import {
   Info,
   Award,
   Lock,
-  Sparkles
+  Sparkles,
+  Download,
+  Loader2
 } from 'lucide-react';
 import { Template, TemplateFieldConfig } from '../../types';
-import { CertificateRenderData } from '../../services/pdfService';
+import { CertificateRenderData, pdfEngine, downloadPdfBlob } from '../../services/pdfService';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
@@ -75,7 +77,42 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
   const [zoom, setZoom] = useState<number>(100);
   const [hideCode, setHideCode] = useState<boolean>(initialHideCode);
   const [isRendering, setIsRendering] = useState<boolean>(true);
+  const [isDownloading, setIsDownloading] = useState<boolean>(false);
   const [securityNotice, setSecurityNotice] = useState<string | null>(null);
+  const [containerDims, setContainerDims] = useState<{ width: number; height: number }>({
+    width: 800,
+    height: 520,
+  });
+
+  const handleDownloadOfficialPdf = async () => {
+    setIsDownloading(true);
+    try {
+      const pdfBytes = await pdfEngine.generateCertificatePdf(template, renderData);
+      const safeFilename = `${(renderData.recipientName || 'Certificate').replace(/[^a-zA-Z0-9_-]/g, '_')}_${renderData.verificationCode || 'cert'}.pdf`;
+      downloadPdfBlob(pdfBytes, safeFilename);
+    } catch (err: any) {
+      console.error('Failed to download official certificate:', err);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  // Track container dimensions with ResizeObserver for true aspect-ratio-aware fit
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const updateDims = () => {
+      if (el.clientWidth > 0 && el.clientHeight > 0) {
+        setContainerDims({ width: el.clientWidth, height: el.clientHeight });
+      }
+    };
+
+    updateDims();
+    const ro = new ResizeObserver(updateDims);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isOpen]);
 
   // Security alert toast timer
   useEffect(() => {
@@ -91,6 +128,7 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
     const handleKeyDown = (e: KeyboardEvent) => {
       // Check for Ctrl+S, Ctrl+P, Ctrl+C (when no text is highlighted), Cmd+S, Cmd+P
       if (
+        isSample &&
         (e.ctrlKey || e.metaKey) &&
         ['s', 'p', 'c', 'u'].includes(e.key.toLowerCase())
       ) {
@@ -102,14 +140,39 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
 
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [isOpen]);
+  }, [isOpen, isSample]);
 
   // Prevent right clicks anywhere inside the preview modal
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    if (!isSample) return;
     e.preventDefault();
     e.stopPropagation();
     setSecurityNotice('Right-click context menu is disabled to prevent image copying.');
-  }, []);
+  }, [isSample]);
+
+  // Helper to disambiguate signatory slots: if multiple signatory fields share the same index or are undefined,
+  // sort them horizontally (left-to-right by X coordinate) so Left gets index 0 and Right gets index 1.
+  const getEffectiveSignatoryIndex = useCallback(
+    (field: TemplateFieldConfig, allFields: TemplateFieldConfig[]): number => {
+      const sameTypeFields = allFields.filter((f) => f.type === field.type);
+      if (sameTypeFields.length <= 1) {
+        return field.signatoryIndex || 0;
+      }
+
+      // If distinct indices are already explicitly configured on all fields, respect them
+      const indices = sameTypeFields.map((f) => f.signatoryIndex);
+      const distinct = new Set(indices.filter((idx) => idx !== undefined && idx !== null));
+      if (distinct.size === sameTypeFields.length && !indices.includes(undefined)) {
+        return field.signatoryIndex || 0;
+      }
+
+      // Left-to-right spatial disambiguation
+      const sorted = [...sameTypeFields].sort((a, b) => a.x - b.x);
+      const positionIndex = sorted.findIndex((f) => f.id === field.id);
+      return positionIndex >= 0 ? positionIndex : (field.signatoryIndex || 0);
+    },
+    []
+  );
 
   // Main Canvas Render Pipeline
   useEffect(() => {
@@ -125,11 +188,49 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      // Canonical scaling for crisp Retina/HiDPI rendering
-      // 5.5 px per mm corresponds to ~140 DPI
-      const scale = 5.5;
-      const targetWidth = Math.round(template.pageWidth * scale);
-      const targetHeight = Math.round(template.pageHeight * scale);
+      // Ensure web fonts (Google Fonts) have loaded into document.fonts before rasterizing
+      const fields = template.fieldConfiguration || [];
+      if (typeof document !== 'undefined' && document.fonts) {
+        try {
+          await document.fonts.ready;
+          const fontNames = Array.from(new Set(fields.map((f) => f.fontFamily).filter(Boolean)));
+          for (const fName of fontNames) {
+            try {
+              await document.fonts.load(`16px "${fName}"`);
+              await document.fonts.load(`bold 16px "${fName}"`);
+            } catch {
+              // Graceful fallback if font is offline
+            }
+          }
+        } catch {
+          // Font loading API fallback
+        }
+      }
+
+      if (isCancelled) return;
+
+      // Canonical scaling for crisp Retina/HiDPI rendering without memory exhaustion
+      let targetWidth: number;
+      let targetHeight: number;
+      let scale: number;
+
+      if (template.pageUnit === 'px' || template.pageWidth > 500) {
+        // Template dimensions are in pixels (e.g. 1414x2000 px)
+        const maxDim = Math.max(template.pageWidth, template.pageHeight);
+        const pxScale = maxDim > 2400 ? 2400 / maxDim : 1;
+        targetWidth = Math.round(template.pageWidth * pxScale);
+        targetHeight = Math.round(template.pageHeight * pxScale);
+        scale = (targetHeight / template.pageHeight) * 2.83;
+      } else if (template.pageUnit === 'in') {
+        scale = 150;
+        targetWidth = Math.round(template.pageWidth * 150);
+        targetHeight = Math.round(template.pageHeight * 150);
+      } else {
+        // mm (default standard A4)
+        scale = 5.5;
+        targetWidth = Math.round(template.pageWidth * scale);
+        targetHeight = Math.round(template.pageHeight * scale);
+      }
 
       canvas.width = targetWidth;
       canvas.height = targetHeight;
@@ -187,8 +288,6 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
       if (isCancelled) return;
 
       // 2. Render Template Fields
-      const fields = template.fieldConfiguration || [];
-
       for (const field of fields) {
         const x = (field.x / template.pageWidth) * targetWidth;
         const y = (field.y / template.pageHeight) * targetHeight;
@@ -196,15 +295,31 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
         const height = (field.height / template.pageHeight) * targetHeight;
 
         // Skip Verification Code if hideCode is true (user requirement: without code to be seen)
+        // Verification code handling
         if (field.type === 'verification_code') {
-          if (hideCode) {
-            // Omit completely
-            continue;
+          if (isSample) {
+            if (hideCode) {
+              // Omit completely
+              continue;
+            } else {
+              // Placeholder text only
+              drawCanvasText(ctx, {
+                field,
+                text: 'SAMPLE-CODE',
+                x,
+                y,
+                width,
+                height,
+                scale,
+                targetHeight,
+              });
+              continue;
+            }
           } else {
-            // Placeholder text only
+            // Official view: render the real verification code
             drawCanvasText(ctx, {
               field,
-              text: 'SAMPLE-CODE',
+              text: renderData.verificationCode || '••••••',
               x,
               y,
               width,
@@ -237,9 +352,9 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
           }
         }
 
-        // Render Signatory Signature Image
+        // Render Signatory Signature Image (with smart index disambiguation)
         if (field.type === 'signatory') {
-          const sigIndex = field.signatoryIndex || 0;
+          const sigIndex = getEffectiveSignatoryIndex(field, fields);
           const sig = renderData.signatories?.[sigIndex];
 
           if (sig?.signatureAssetUrl) {
@@ -277,7 +392,7 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
         }
 
         // Resolve text field string
-        const textValue = resolveFieldString(field, renderData);
+        const textValue = resolveFieldString(field, renderData, fields);
         if (!textValue) continue;
 
         drawCanvasText(ctx, {
@@ -295,7 +410,9 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
       if (isCancelled) return;
 
       // 3. Render Indelible In-Canvas Watermark (Baked into canvas pixels)
-      drawCanvasWatermarks(ctx, targetWidth, targetHeight);
+      if (isSample) {
+        drawCanvasWatermarks(ctx, targetWidth, targetHeight);
+      }
 
       setIsRendering(false);
     };
@@ -305,10 +422,14 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
     return () => {
       isCancelled = true;
     };
-  }, [isOpen, template, renderData, hideCode]);
+  }, [isOpen, template, renderData, isSample, hideCode, getEffectiveSignatoryIndex]);
 
-  // Resolves field text values
-  const resolveFieldString = (field: TemplateFieldConfig, data: CertificateRenderData): string => {
+  // Resolves field text values with smart signatory disambiguation
+  const resolveFieldString = (
+    field: TemplateFieldConfig,
+    data: CertificateRenderData,
+    allFields: TemplateFieldConfig[]
+  ): string => {
     switch (field.type) {
       case 'recipient_name':
         return data.recipientName || 'Jane Doe';
@@ -323,11 +444,13 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
       case 'organization_name':
         return data.organizationName || 'Namdapha House, IIT Madras BS Degree';
       case 'signatory_name': {
-        const sig = data.signatories?.[field.signatoryIndex || 0];
+        const sigIndex = getEffectiveSignatoryIndex(field, allFields);
+        const sig = data.signatories?.[sigIndex];
         return sig?.name || 'Authorized Signatory';
       }
       case 'signatory_designation': {
-        const sig = data.signatories?.[field.signatoryIndex || 0];
+        const sigIndex = getEffectiveSignatoryIndex(field, allFields);
+        const sig = data.signatories?.[sigIndex];
         return sig?.designation || 'Signatory Designation';
       }
       case 'static_text':
@@ -353,20 +476,50 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
   ) => {
     const { field, text, x, y, width, height, targetHeight } = params;
 
-    // Resolve font family
-    let fontFamily = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-    const fam = (field.fontFamily || '').toLowerCase();
-    if (fam.includes('times') || fam.includes('serif')) {
-      fontFamily = "'Times New Roman', Times, Georgia, serif";
-    } else if (fam.includes('courier') || fam.includes('mono')) {
-      fontFamily = "'Courier New', Courier, monospace";
+    // Font size 0 indicates field is muted/hidden
+    if (field.fontSize === 0) return;
+
+    // Resolve font family with proper CSS fallback category
+    const rawFam = (field.fontFamily || 'Inter').trim();
+    let fallbackCategory = 'sans-serif';
+    const famLower = rawFam.toLowerCase();
+    if (
+      famLower.includes('serif') ||
+      famLower.includes('playfair') ||
+      famLower.includes('cinzel') ||
+      famLower.includes('garamond') ||
+      famLower.includes('merriweather') ||
+      famLower.includes('bodoni') ||
+      famLower.includes('lora') ||
+      famLower.includes('times')
+    ) {
+      fallbackCategory = 'serif';
+    } else if (
+      famLower.includes('script') ||
+      famLower.includes('vibes') ||
+      famLower.includes('brush') ||
+      famLower.includes('pinyon') ||
+      famLower.includes('dancing') ||
+      famLower.includes('parisienne') ||
+      famLower.includes('allura') ||
+      famLower.includes('montecarlo')
+    ) {
+      fallbackCategory = 'cursive, serif';
+    } else if (
+      famLower.includes('mono') ||
+      famLower.includes('courier') ||
+      famLower.includes('jetbrains')
+    ) {
+      fallbackCategory = 'monospace';
     }
 
+    const fontFamily = `"${rawFam}", ${fallbackCategory}`;
     const isBold = field.fontWeight === 'bold' || String(field.fontWeight) === '700';
     const fontWeight = isBold ? '700' : '400';
+    const fontStyle = famLower.includes('italic') ? 'italic ' : '';
 
-    // Canvas font size proportional to target canvas height vs millimeter page height
-    let fontSize = Math.max(12, Math.round((field.fontSize / template.pageHeight) * targetHeight * 0.95));
+    // Canvas font size proportional to target canvas height vs template page height
+    let fontSize = Math.max(8, Math.round((field.fontSize / template.pageHeight) * targetHeight * 0.95));
 
     ctx.fillStyle = field.color || '#1B1622';
     ctx.textBaseline = 'middle';
@@ -378,7 +531,7 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
     if (field.alignment === 'right') anchorX = x + width;
 
     // Multi-line wrap or font shrink
-    ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+    ctx.font = `${fontStyle}${fontWeight} ${fontSize}px ${fontFamily}`;
     const shouldWrap =
       field.type === 'achievement' ||
       field.overflowBehavior === 'wrap' ||
@@ -486,13 +639,28 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
     ctx.restore();
   };
 
+  // Aspect-ratio-aware proportional scale calculation (Phase 1)
+  // Guarantees entire certificate fits 100% within viewport without cropping, distortion, or overflow
+  const paddingX = 48;
+  const paddingY = 48;
+  const availW = Math.max(160, containerDims.width - paddingX);
+  const availH = Math.max(160, containerDims.height - paddingY);
+  const scaleW = availW / template.pageWidth;
+  const scaleH = availH / template.pageHeight;
+  const fitScale = Math.min(scaleW, scaleH);
+
+  const baseWidth = Math.round(template.pageWidth * fitScale);
+  const baseHeight = Math.round(template.pageHeight * fitScale);
+  const displayWidth = Math.round(baseWidth * (zoom / 100));
+  const displayHeight = Math.round(baseHeight * (zoom / 100));
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Protected Certificate Sample Preview"
-      description="Secure on-screen sample preview with anti-copy protection, indelible watermarks, and verification code suppression."
-      maxWidth="2xl"
+      title={isSample ? "Protected Certificate Sample Preview" : `Official Certificate Preview • ${renderData.recipientName}`}
+      description={isSample ? "Secure on-screen sample preview with anti-copy protection, indelible watermarks, and verification code suppression." : "Authoritative vector-rendered certificate preview preserved at issuance timestamp."}
+      maxWidth="5xl"
       footer={
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 w-full">
           <div className="flex items-center gap-2 text-xs text-neutral-secondary">
@@ -506,6 +674,17 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
             <Button variant="outline" size="sm" onClick={onClose}>
               Close Preview
             </Button>
+            {!isSample && (
+              <Button
+                variant="primary"
+                size="sm"
+                leftIcon={isDownloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                onClick={handleDownloadOfficialPdf}
+                disabled={isDownloading}
+              >
+                {isDownloading ? 'Generating PDF...' : 'Download Official PDF'}
+              </Button>
+            )}
             {onProceedToIssue && (
               <Button
                 variant="primary"
@@ -548,22 +727,24 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
         <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-neutral-surface rounded-lg border border-neutral-subtle text-xs">
           {/* Status Badges */}
           <div className="flex flex-wrap items-center gap-2">
-            {isSample && <Badge variant="pending">Sample Mode</Badge>}
-            <Badge variant="info">Watermark Protected</Badge>
-            <button
-              type="button"
-              onClick={() => setHideCode((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium border transition-colors cursor-pointer"
-              style={{
-                backgroundColor: hideCode ? '#F0EDF5' : '#FFF0D7',
-                color: hideCode ? '#2A1B4E' : '#8C5800',
-                borderColor: hideCode ? '#7760B5' : '#D9C7A1',
-              }}
-              title="Click to toggle code visibility in sample view"
-            >
-              {hideCode ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-              <span>{hideCode ? 'Code: Hidden (Recommended)' : 'Code: Visible'}</span>
-            </button>
+            {isSample ? <Badge variant="pending">Sample Mode</Badge> : <Badge variant="success">Official Certificate</Badge>}
+            {isSample && <Badge variant="info">Watermark Protected</Badge>}
+            {isSample && (
+              <button
+                type="button"
+                onClick={() => setHideCode((prev) => !prev)}
+                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium border transition-colors cursor-pointer"
+                style={{
+                  backgroundColor: hideCode ? '#F0EDF5' : '#FFF0D7',
+                  color: hideCode ? '#2A1B4E' : '#8C5800',
+                  borderColor: hideCode ? '#7760B5' : '#D9C7A1',
+                }}
+                title="Click to toggle code visibility in sample view"
+              >
+                {hideCode ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                <span>{hideCode ? 'Code: Hidden (Recommended)' : 'Code: Visible'}</span>
+              </button>
+            )}
           </div>
 
           {/* Zoom Controls */}
@@ -607,7 +788,7 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
         <div
           ref={containerRef}
           onContextMenu={handleContextMenu}
-          className="relative overflow-auto max-h-[60vh] sm:max-h-[64vh] flex items-center justify-center p-3 sm:p-6 bg-neutral-900/10 rounded-lg border border-neutral-subtle select-none cursor-default"
+          className="relative overflow-auto h-[60vh] sm:h-[65vh] min-h-[420px] max-h-[720px] flex items-center justify-center p-3 sm:p-6 bg-neutral-900/10 rounded-lg border border-neutral-subtle select-none cursor-default"
           style={{
             userSelect: 'none',
             WebkitUserSelect: 'none',
@@ -625,13 +806,13 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
           {/* Canvas Wrapper with Zoom Scaling */}
           <div
             style={{
-              width: `${zoom}%`,
-              maxWidth: zoom > 100 ? 'none' : '100%',
+              width: `${displayWidth}px`,
+              height: `${displayHeight}px`,
               aspectRatio: `${template.pageWidth} / ${template.pageHeight}`,
-              transition: 'width 0.12s cubic-bezier(0.4, 0, 0.2, 1)',
-              willChange: 'width',
+              transition: 'width 0.12s cubic-bezier(0.4, 0, 0.2, 1), height 0.12s cubic-bezier(0.4, 0, 0.2, 1)',
+              willChange: 'width, height',
             }}
-            className="relative shadow-2xl rounded-sm overflow-hidden border border-neutral-subtle/80 bg-white select-none shrink-0"
+            className="m-auto relative shadow-2xl rounded-sm overflow-hidden border border-neutral-subtle/80 bg-white select-none shrink-0"
           >
             {/* The Raw Canvas Element */}
             <canvas
@@ -652,44 +833,46 @@ export const ProtectedCertificateModal: React.FC<ProtectedCertificateModalProps>
             />
 
             {/* Secondary Floating SVG Watermark Overlay Pattern */}
-            <div
-              className="absolute inset-0 z-20 pointer-events-none select-none opacity-25 overflow-hidden"
-              aria-hidden="true"
-            >
-              <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                  <pattern
-                    id="sample-watermark-pattern"
-                    width="280"
-                    height="140"
-                    patternUnits="userSpaceOnUse"
-                    patternTransform="rotate(-25)"
-                  >
-                    <text
-                      x="20"
-                      y="40"
-                      fill="#7760B5"
-                      fontFamily="Inter, sans-serif"
-                      fontSize="14"
-                      fontWeight="bold"
+            {isSample && (
+              <div
+                className="absolute inset-0 z-20 pointer-events-none select-none opacity-25 overflow-hidden"
+                aria-hidden="true"
+              >
+                <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <pattern
+                      id="sample-watermark-pattern"
+                      width="280"
+                      height="140"
+                      patternUnits="userSpaceOnUse"
+                      patternTransform="rotate(-25)"
                     >
-                      SAMPLE CERTIFICATE
-                    </text>
-                    <text
-                      x="40"
-                      y="100"
-                      fill="#A21C30"
-                      fontFamily="Inter, sans-serif"
-                      fontSize="11"
-                      fontWeight="600"
-                    >
-                      PREVIEW ONLY • NOT ISSUED
-                    </text>
-                  </pattern>
-                </defs>
-                <rect width="100%" height="100%" fill="url(#sample-watermark-pattern)" />
-              </svg>
-            </div>
+                      <text
+                        x="20"
+                        y="40"
+                        fill="#7760B5"
+                        fontFamily="Inter, sans-serif"
+                        fontSize="14"
+                        fontWeight="bold"
+                      >
+                        SAMPLE CERTIFICATE
+                      </text>
+                      <text
+                        x="40"
+                        y="100"
+                        fill="#A21C30"
+                        fontFamily="Inter, sans-serif"
+                        fontSize="11"
+                        fontWeight="600"
+                      >
+                        PREVIEW ONLY • NOT ISSUED
+                      </text>
+                    </pattern>
+                  </defs>
+                  <rect width="100%" height="100%" fill="url(#sample-watermark-pattern)" />
+                </svg>
+              </div>
+            )}
           </div>
         </div>
 
