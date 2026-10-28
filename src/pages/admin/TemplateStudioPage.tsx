@@ -23,7 +23,13 @@ import {
   PenTool,
   RefreshCw,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  Copy,
+  Clipboard,
+  Edit2,
+  Check,
+  X,
+  Image as ImageIcon
 } from 'lucide-react';
 import { portalService } from '../../services';
 import { Template, TemplateFieldConfig, TemplateFieldType, Signatory } from '../../types';
@@ -36,6 +42,54 @@ import { Modal } from '../../components/ui/Modal';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { ProtectedCertificateModal } from '../../components/admin/ProtectedCertificateModal';
+import { ChangeDesignModal } from '../../components/admin/ChangeDesignModal';
+import { CERTIFICATE_FONT_GROUPS, ALL_CERTIFICATE_FONTS } from '../../utils/fontConstants';
+import { useToast } from '../../contexts/ToastContext';
+
+const formatTemplateDate = (tpl: Template | null) => {
+  if (!tpl) return '';
+  const dateStr = tpl.updatedAt || tpl.publishedAt || tpl.createdAt;
+  if (!dateStr) return 'Recently';
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return 'Recently';
+  }
+};
+
+export const resolveCssFontFamily = (rawFamily?: string): string => {
+  const f = (rawFamily || 'Inter').trim();
+  const fl = f.toLowerCase();
+  if (
+    fl.includes('serif') ||
+    fl.includes('playfair') ||
+    fl.includes('cinzel') ||
+    fl.includes('garamond') ||
+    fl.includes('merriweather') ||
+    fl.includes('bodoni') ||
+    fl.includes('lora') ||
+    fl.includes('times')
+  ) {
+    return `"${f}", Georgia, serif`;
+  }
+  if (
+    fl.includes('script') ||
+    fl.includes('vibes') ||
+    fl.includes('brush') ||
+    fl.includes('pinyon') ||
+    fl.includes('dancing') ||
+    fl.includes('parisienne') ||
+    fl.includes('allura') ||
+    fl.includes('montecarlo')
+  ) {
+    return `"${f}", cursive, serif`;
+  }
+  if (fl.includes('mono') || fl.includes('courier') || fl.includes('jetbrains')) {
+    return `"${f}", monospace`;
+  }
+  return `"${f}", sans-serif`;
+};
 
 // Standard field presets
 const FIELD_PRESETS: Array<{
@@ -223,6 +277,14 @@ export const TemplateStudioPage: React.FC = () => {
   const [isPublishing, setIsPublishing] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
+  const { success: toastSuccess, info: toastInfo } = useToast();
+  const [clipboardField, setClipboardField] = useState<TemplateFieldConfig | null>(null);
+
+  // Template Name Editing State
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editingNameValue, setEditingNameValue] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
+
   // Undo / Redo history stack
   const [history, setHistory] = useState<TemplateFieldConfig[][]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
@@ -238,6 +300,9 @@ export const TemplateStudioPage: React.FC = () => {
 
   // Publish confirmation modal
   const [isPublishConfirmOpen, setIsPublishConfirmOpen] = useState(false);
+
+  // Change Certificate Design modal
+  const [isChangeDesignModalOpen, setIsChangeDesignModalOpen] = useState(false);
 
   // Canvas DOM ref for calculating mouse positions
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -265,6 +330,22 @@ export const TemplateStudioPage: React.FC = () => {
 
     const optimalZoom = Math.min(125, Math.max(35, Math.floor(fitScale * 100)));
     setZoomLevel(optimalZoom);
+  }, [template]);
+
+  // Calculate visual scale factor from template canonical units to canvas pixels
+  const getCanvasScaleFactor = useCallback(() => {
+    if (!template) return 1;
+    const isLandscape = template.orientation === 'landscape';
+    const canvasBaseWidth = isLandscape ? 840 : 595;
+    if (template.pageUnit === 'px') {
+      return canvasBaseWidth / (template.pageWidth || 2000);
+    } else if (template.pageUnit === 'in') {
+      return canvasBaseWidth / ((template.pageWidth || 11.69) * 72);
+    } else {
+      // mm: 1 inch = 25.4mm, 72 pt = 1 inch
+      const pointsWidth = ((template.pageWidth || 297) * 72) / 25.4;
+      return canvasBaseWidth / pointsWidth;
+    }
   }, [template]);
 
   const fetchTemplateData = useCallback(async () => {
@@ -373,6 +454,14 @@ export const TemplateStudioPage: React.FC = () => {
       y = Math.round(y / snapStep) * snapStep;
     }
 
+    // Smart signatory slot auto-increment when adding from preset palette
+    let signatoryIndex: number | undefined = undefined;
+    if (preset.type === 'signatory' || preset.type === 'signatory_name' || preset.type === 'signatory_designation') {
+      const existingSameType = fields.filter((f) => f.type === preset.type);
+      const usedIndices = existingSameType.map((f) => f.signatoryIndex ?? 0);
+      signatoryIndex = usedIndices.includes(0) ? 1 : 0;
+    }
+
     const newField: TemplateFieldConfig = {
       id: `field-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       name: preset.defaultName,
@@ -388,7 +477,7 @@ export const TemplateStudioPage: React.FC = () => {
       alignment: preset.defaultAlignment,
       isRequired: true,
       overflowBehavior: 'shrink',
-      signatoryIndex: preset.type === 'signatory' || preset.type === 'signatory_name' || preset.type === 'signatory_designation' ? 0 : undefined,
+      signatoryIndex,
     };
 
     const updated = [...fields, newField];
@@ -412,6 +501,243 @@ export const TemplateStudioPage: React.FC = () => {
     setFields(updated);
     pushHistory(updated);
   };
+
+  // Helper to determine coordinate offset based on page unit
+  const getUnitOffset = useCallback(() => {
+    if (!template) return 5;
+    if (template.pageUnit === 'px') return 20;
+    if (template.pageUnit === 'in') return 0.25;
+    return 5; // mm default
+  }, [template]);
+
+  // Copy selected field configuration to clipboard (Ctrl+C)
+  const handleCopy = useCallback((fieldToCopy?: TemplateFieldConfig) => {
+    const target = fieldToCopy || fields.find((f) => f.id === selectedFieldId);
+    if (!target) return;
+    // Deep clone to prevent any shared mutable state
+    const cloned = JSON.parse(JSON.stringify(target));
+    setClipboardField(cloned);
+    toastInfo?.(`Copied structure for "${target.name}" (Ctrl+V to paste new element)`);
+  }, [fields, selectedFieldId, toastInfo]);
+
+  // Paste field: Copy the structure & styling, NOT the unique identity or content (Ctrl+V)
+  const handlePaste = useCallback(() => {
+    if (!clipboardField || !template) return;
+    const offset = getUnitOffset();
+    const newW = clipboardField.width;
+    const newH = clipboardField.height;
+    const newX = Math.max(0, Math.min(template.pageWidth - newW, clipboardField.x + offset));
+    const newY = Math.max(0, Math.min(template.pageHeight - newH, clipboardField.y + offset));
+
+    // Deep clone the visual configuration
+    const pasted: TemplateFieldConfig = JSON.parse(JSON.stringify(clipboardField));
+    pasted.id = `field-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    pasted.x = Math.round(newX * 10) / 10;
+    pasted.y = Math.round(newY * 10) / 10;
+
+    // Handle unique identity & content separation appropriately by element type (Phase 3A)
+    if (pasted.type === 'signatory' || pasted.type === 'signatory_name' || pasted.type === 'signatory_designation') {
+      // Advance to next signatory index slot instead of reusing original signatory's slot
+      const existingSameType = fields.filter((f) => f.type === pasted.type);
+      const usedIndices = existingSameType.map((f) => f.signatoryIndex ?? 0);
+      const nextIndex = usedIndices.includes(0) ? (usedIndices.includes(1) ? 2 : 1) : 0;
+      pasted.signatoryIndex = nextIndex;
+      if (pasted.type === 'signatory') {
+        pasted.name = `Signatory ${nextIndex + 1} Signature`;
+      } else if (pasted.type === 'signatory_name') {
+        pasted.name = `Signatory ${nextIndex + 1} Name`;
+      } else {
+        pasted.name = `Signatory ${nextIndex + 1} Title`;
+      }
+    } else if (pasted.type === 'static_text') {
+      // Clear specific static text content to give clean placeholder
+      pasted.staticTextContent = '';
+      pasted.name = 'New Text Element';
+    } else if (pasted.type === 'recipient_name') {
+      // If a recipient name already exists, convert pasted element to editable text element
+      const hasExistingRecipient = fields.some((f) => f.type === 'recipient_name');
+      if (hasExistingRecipient) {
+        pasted.name = 'Additional Name / Text';
+        pasted.type = 'static_text';
+        pasted.staticTextContent = '';
+      } else {
+        pasted.name = 'Recipient Full Name';
+      }
+    } else if (pasted.type === 'achievement') {
+      pasted.name = 'Achievement / Award Citation';
+    } else {
+      pasted.name = `New ${pasted.type.replace('_', ' ')}`;
+    }
+
+    const updated = [...fields, pasted];
+    setFields(updated);
+    setSelectedFieldId(pasted.id);
+    pushHistory(updated);
+    // Cascade next paste offset from newly placed field
+    setClipboardField({ ...pasted, name: clipboardField.name });
+    toastSuccess?.(`Pasted styled element "${pasted.name}"`);
+  }, [clipboardField, template, getUnitOffset, fields, pushHistory, toastSuccess]);
+
+  // Duplicate Element Button / Shortcut (Ctrl+D): Create an EXACT replica of the element
+  const handleDuplicate = useCallback((fieldId?: string) => {
+    const targetId = fieldId || selectedFieldId;
+    const target = fields.find((f) => f.id === targetId);
+    if (!target || !template) return;
+    const offset = getUnitOffset();
+    const newX = Math.max(0, Math.min(template.pageWidth - target.width, target.x + offset));
+    const newY = Math.max(0, Math.min(template.pageHeight - target.height, target.y + offset));
+
+    // Deep-clone exact replica preserving identical content, text, data bindings, font, dimensions (Phase 3B)
+    const duplicated: TemplateFieldConfig = JSON.parse(JSON.stringify(target));
+    duplicated.id = `field-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    duplicated.name = target.name.includes('(Duplicate)')
+      ? target.name
+      : (target.name.includes('(Copy)')
+          ? target.name.replace('(Copy)', '(Duplicate)')
+          : `${target.name} (Duplicate)`);
+    duplicated.x = Math.round(newX * 10) / 10;
+    duplicated.y = Math.round(newY * 10) / 10;
+
+    const updated = [...fields, duplicated];
+    setFields(updated);
+    setSelectedFieldId(duplicated.id);
+    pushHistory(updated);
+    toastSuccess?.(`Duplicated exact replica "${target.name}"`);
+  }, [selectedFieldId, fields, template, getUnitOffset, pushHistory, toastSuccess]);
+
+  // Native non-passive wheel listener on canvas container to allow smooth Ctrl+Wheel zooming
+  useEffect(() => {
+    const container = centerContainerRef.current;
+    if (!container) return;
+
+    const handleNativeWheel = (e: WheelEvent) => {
+      // Zoom with Ctrl / Cmd or trackpad pinch
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const delta = e.deltaY < 0 ? 5 : -5;
+        setZoomLevel((z) => Math.min(300, Math.max(25, z + delta)));
+      }
+    };
+
+    container.addEventListener('wheel', handleNativeWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleNativeWheel);
+  }, []);
+
+  // Global Keyboard Shortcuts (Ctrl+C, Ctrl+V, Ctrl+D, Ctrl+Z, Ctrl+Y, Zoom, Del/Backspace, Arrow nudges)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const isInput =
+        activeEl instanceof HTMLInputElement ||
+        activeEl instanceof HTMLTextAreaElement ||
+        activeEl instanceof HTMLSelectElement ||
+        activeEl?.getAttribute('contenteditable') === 'true';
+
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+
+      // Global zoom shortcuts (work even if input is not focused)
+      if (isCtrlOrCmd && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        setZoomLevel((z) => Math.min(300, z + 10));
+        return;
+      }
+      if (isCtrlOrCmd && (e.key === '-' || e.key === '_')) {
+        e.preventDefault();
+        setZoomLevel((z) => Math.max(25, z - 10));
+        return;
+      }
+      if (isCtrlOrCmd && e.key === '0') {
+        e.preventDefault();
+        fitToScreen();
+        return;
+      }
+
+      // If user is actively typing in an input/textarea/select, let browser handle editing
+      if (isInput) return;
+
+      // Copy: Ctrl+C / Cmd+C
+      if (isCtrlOrCmd && e.key.toLowerCase() === 'c') {
+        if (selectedFieldId) {
+          e.preventDefault();
+          handleCopy();
+        }
+      }
+      // Paste: Ctrl+V / Cmd+V
+      else if (isCtrlOrCmd && e.key.toLowerCase() === 'v') {
+        if (clipboardField) {
+          e.preventDefault();
+          handlePaste();
+        }
+      }
+      // Duplicate: Ctrl+D / Cmd+D
+      else if (isCtrlOrCmd && e.key.toLowerCase() === 'd') {
+        if (selectedFieldId) {
+          e.preventDefault();
+          handleDuplicate();
+        }
+      }
+      // Undo: Ctrl+Z (without shift)
+      else if (isCtrlOrCmd && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      }
+      // Redo: Ctrl+Y or Ctrl+Shift+Z
+      else if (
+        (isCtrlOrCmd && e.key.toLowerCase() === 'y') ||
+        (isCtrlOrCmd && e.key.toLowerCase() === 'z' && e.shiftKey)
+      ) {
+        e.preventDefault();
+        handleRedo();
+      }
+      // Delete: Del or Backspace
+      else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedFieldId) {
+          e.preventDefault();
+          handleRemoveField(selectedFieldId);
+        }
+      }
+      // Arrow keys: fine positional nudging
+      else if (
+        selectedFieldId &&
+        (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')
+      ) {
+        e.preventDefault();
+        const step = e.shiftKey ? 5 : 1;
+        setFields((prev) =>
+          prev.map((f) => {
+            if (f.id !== selectedFieldId) return f;
+            let dx = 0;
+            let dy = 0;
+            if (e.key === 'ArrowUp') dy = -step;
+            if (e.key === 'ArrowDown') dy = step;
+            if (e.key === 'ArrowLeft') dx = -step;
+            if (e.key === 'ArrowRight') dx = step;
+            return {
+              ...f,
+              x: Math.round(Math.max(0, f.x + dx) * 10) / 10,
+              y: Math.round(Math.max(0, f.y + dy) * 10) / 10,
+            };
+          })
+        );
+        pushHistory(fields);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    selectedFieldId,
+    clipboardField,
+    handleCopy,
+    handlePaste,
+    handleDuplicate,
+    handleUndo,
+    handleRedo,
+    handleRemoveField,
+    fitToScreen,
+    fields,
+    pushHistory,
+  ]);
 
   // Mouse drag & resize handlers in millimeter space
   const handleMouseDownOnField = (e: React.MouseEvent, field: TemplateFieldConfig, isResize: boolean = false) => {
@@ -515,6 +841,42 @@ export const TemplateStudioPage: React.FC = () => {
     }
   };
 
+  // Inline Template Name Editing handlers
+  const handleStartEditingName = () => {
+    if (!template) return;
+    setEditingNameValue(template.name);
+    setIsEditingName(true);
+  };
+
+  const handleSaveName = async () => {
+    if (!template) return;
+    const trimmed = editingNameValue.trim();
+    if (!trimmed) {
+      toastInfo('Template name cannot be empty.');
+      return;
+    }
+    if (trimmed === template.name) {
+      setIsEditingName(false);
+      return;
+    }
+    setIsSavingName(true);
+    try {
+      const updated = await portalService.updateTemplate(template.id, { name: trimmed });
+      setTemplate((prev) => (prev ? { ...prev, name: updated.name, updatedAt: updated.updatedAt } : null));
+      setIsEditingName(false);
+      toastSuccess('Template name updated successfully!');
+    } catch (err: any) {
+      toastInfo(`Failed to update template name: ${err.message}`);
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
+  const handleCancelEditingName = () => {
+    setIsEditingName(false);
+    setEditingNameValue('');
+  };
+
   // Publish template with version increment
   const handlePublishConfirm = async () => {
     if (!template) return;
@@ -532,6 +894,23 @@ export const TemplateStudioPage: React.FC = () => {
     } finally {
       setIsPublishing(false);
     }
+  };
+
+  // Replace certificate background artwork while preserving all element positions
+  const handleApplyDesign = async (file: File) => {
+    if (!template) return;
+    const updated = await portalService.updateTemplateBackground(template.id, file);
+    setTemplate((prev) =>
+      prev
+        ? {
+            ...prev,
+            backgroundUrl: updated.backgroundUrl,
+            backgroundStoragePath: updated.backgroundStoragePath,
+            updatedAt: updated.updatedAt,
+          }
+        : updated
+    );
+    toastSuccess?.('Certificate design updated successfully! All element positions preserved.');
   };
 
   // Test PDF generation dialog
@@ -608,10 +987,75 @@ export const TemplateStudioPage: React.FC = () => {
           <div className="h-4 w-px bg-neutral-subtle" />
 
           <div className="flex items-center gap-2">
-            <h1 className="text-sm font-bold text-neutral-main truncate max-w-xs">{template.name}</h1>
-            <Badge variant={template.status === 'published' ? 'success' : 'pending'} size="sm">
-              v{template.versionNumber} • {template.status}
+            {isEditingName ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSaveName();
+                }}
+                className="flex items-center gap-1.5"
+              >
+                <input
+                  type="text"
+                  value={editingNameValue}
+                  onChange={(e) => setEditingNameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') handleCancelEditingName();
+                  }}
+                  autoFocus
+                  disabled={isSavingName}
+                  className="px-2 py-0.5 text-xs font-bold rounded border border-brand-violet bg-white text-neutral-main focus:outline-none focus:ring-1 focus:ring-brand-violet w-48 sm:w-64"
+                  placeholder="Template Name"
+                />
+                <button
+                  type="submit"
+                  disabled={isSavingName}
+                  className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                  title="Save Name (Enter)"
+                  aria-label="Save template name"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelEditingName}
+                  disabled={isSavingName}
+                  className="p-1 rounded bg-neutral-200 text-neutral-700 hover:bg-neutral-300 disabled:opacity-50 transition-colors"
+                  title="Cancel (Esc)"
+                  aria-label="Cancel renaming"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </form>
+            ) : (
+              <div
+                className="flex items-center gap-1.5 group cursor-pointer"
+                onClick={handleStartEditingName}
+                title="Click to rename template"
+              >
+                <h1 className="text-sm font-bold text-neutral-main truncate max-w-xs group-hover:text-brand-violet transition-colors">
+                  {template.name}
+                </h1>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleStartEditingName();
+                  }}
+                  className="p-1 rounded text-neutral-secondary group-hover:text-brand-violet hover:bg-neutral-subtle/50 transition-colors"
+                  title="Rename template"
+                  aria-label="Rename template"
+                >
+                  <Edit2 className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+            <Badge variant={template.status === 'published' ? 'success' : 'pending'} size="sm" className="capitalize">
+              {template.status}
             </Badge>
+            <span className="text-[11px] text-neutral-secondary font-mono">
+              Updated {formatTemplateDate(template)}
+            </span>
             {hasUnsavedChanges && (
               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
                 Unsaved
@@ -628,18 +1072,18 @@ export const TemplateStudioPage: React.FC = () => {
           {/* Zoom Controls */}
           <div className="flex items-center bg-neutral-surface rounded-md border border-neutral-subtle p-0.5 text-xs">
             <button
-              onClick={() => setZoomLevel((z) => Math.max(35, z - 10))}
+              onClick={() => setZoomLevel((z) => Math.max(25, z - 10))}
               className="p-1 hover:bg-white rounded transition-colors text-neutral-secondary hover:text-neutral-main"
-              title="Zoom Out"
+              title="Zoom Out (Ctrl -)"
               aria-label="Zoom Out"
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
-            <span className="px-2 font-mono text-[11px] text-neutral-main min-w-[36px] text-center">{zoomLevel}%</span>
+            <span className="px-2 font-mono text-[11px] font-bold text-neutral-main min-w-[40px] text-center">{zoomLevel}%</span>
             <button
-              onClick={() => setZoomLevel((z) => Math.min(200, z + 10))}
+              onClick={() => setZoomLevel((z) => Math.min(300, z + 10))}
               className="p-1 hover:bg-white rounded transition-colors text-neutral-secondary hover:text-neutral-main"
-              title="Zoom In"
+              title="Zoom In (Ctrl +)"
               aria-label="Zoom In"
             >
               <ZoomIn className="w-3.5 h-3.5" />
@@ -647,7 +1091,7 @@ export const TemplateStudioPage: React.FC = () => {
             <button
               onClick={fitToScreen}
               className="px-1.5 py-0.5 hover:bg-white rounded transition-colors text-[10px] font-semibold text-brand-violet hover:text-brand-midnight border-l border-neutral-subtle/80 ml-0.5"
-              title="Fit to Screen (Auto-Scale)"
+              title="Fit to Screen (Ctrl 0)"
               aria-label="Fit to Screen"
             >
               Fit
@@ -713,6 +1157,17 @@ export const TemplateStudioPage: React.FC = () => {
             <span>{isPreviewMode ? 'Exit Preview' : 'Sample Preview'}</span>
           </button>
 
+          {/* Change Certificate Design */}
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<ImageIcon className="w-3.5 h-3.5 text-brand-violet" />}
+            onClick={() => setIsChangeDesignModalOpen(true)}
+            title="Upload a new certificate background while keeping all existing elements in place"
+          >
+            Change Certificate Design
+          </Button>
+
           {/* Protected On-Screen Sample View */}
           <Button
             variant="outline"
@@ -753,7 +1208,7 @@ export const TemplateStudioPage: React.FC = () => {
             leftIcon={<CheckCircle className="w-3.5 h-3.5" />}
             onClick={() => setIsPublishConfirmOpen(true)}
           >
-            Publish v{template.status === 'published' ? template.versionNumber + 1 : template.versionNumber}
+            Publish Template
           </Button>
         </div>
       </header>
@@ -868,16 +1323,28 @@ export const TemplateStudioPage: React.FC = () => {
                           )}
                         </div>
 
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRemoveField(f.id);
-                          }}
-                          className="text-neutral-secondary hover:text-red-600 p-1 rounded"
-                          title="Delete Field"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDuplicate(f.id);
+                            }}
+                            className="text-neutral-secondary hover:text-brand-violet p-1 rounded hover:bg-neutral-surface transition-colors"
+                            title="Duplicate Field (Ctrl+D)"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveField(f.id);
+                            }}
+                            className="text-neutral-secondary hover:text-red-600 p-1 rounded hover:bg-neutral-surface transition-colors"
+                            title="Delete Field (Del)"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -968,14 +1435,25 @@ export const TemplateStudioPage: React.FC = () => {
                 </div>
               )}
 
+              {/* Alignment Center Guideline when dragging */}
+              {draggingFieldId && (
+                <div
+                  className="absolute top-0 bottom-0 pointer-events-none z-20 border-l border-dashed border-brand-violet/50"
+                  style={{ left: '50%' }}
+                />
+              )}
+
               {/* Dynamic Fields Placed on Canvas */}
               {fields.map((field) => {
                 const isSelected = field.id === selectedFieldId;
-                // Compute percentage-based styles relative to template dimensions (mm)
+                // Compute percentage-based styles relative to template dimensions (mm or px)
                 const leftPercent = (field.x / template.pageWidth) * 100;
                 const topPercent = (field.y / template.pageHeight) * 100;
                 const widthPercent = (field.width / template.pageWidth) * 100;
                 const heightPercent = (field.height / template.pageHeight) * 100;
+
+                const scaleFactor = getCanvasScaleFactor();
+                const visualFontSize = field.fontSize === 0 ? 0 : Math.max(1, (field.fontSize ?? 12) * scaleFactor);
 
                 // Value for preview
                 let previewText = field.name;
@@ -1033,12 +1511,8 @@ export const TemplateStudioPage: React.FC = () => {
                       height: `${heightPercent}%`,
                       color: field.color,
                       textAlign: field.alignment,
-                      fontFamily: field.fontFamily.includes('Times')
-                        ? 'serif'
-                        : field.fontFamily.includes('Courier')
-                        ? 'monospace'
-                        : 'sans-serif',
-                      fontSize: `${Math.max(8, field.fontSize * 0.95)}px`,
+                      fontFamily: resolveCssFontFamily(field.fontFamily),
+                      fontSize: `${visualFontSize}px`,
                       fontWeight: field.fontWeight === 'bold' ? 700 : 400,
                     }}
                     className={`absolute flex items-center ${
@@ -1059,6 +1533,57 @@ export const TemplateStudioPage: React.FC = () => {
                           }`
                     }`}
                   >
+                    {/* Live HUD metadata tag on selected field with quick Duplicate, Copy, and Delete */}
+                    {isSelected && !isPreviewMode && (
+                      <div className="absolute -top-7 left-0 flex items-center gap-1.5 bg-brand-midnight text-white text-[10px] font-mono px-2 py-0.5 rounded shadow-md whitespace-nowrap z-30 border border-brand-violet/40">
+                        <span className="font-semibold text-brand-violet-light truncate max-w-[120px]">{field.name}</span>
+                        <span className="opacity-40">|</span>
+                        <span>X: {field.x} Y: {field.y}</span>
+                        <span className="opacity-40">|</span>
+                        <span>{field.width}×{field.height} {template.pageUnit}</span>
+                        <span className="opacity-40">|</span>
+                        <span className={field.fontSize === 0 ? 'text-amber-400 font-bold' : 'text-emerald-300 font-bold'}>
+                          {field.fontSize === 0 ? 'Size: 0 (Muted)' : `${field.fontSize}pt`}
+                        </span>
+                        <span className="opacity-40">|</span>
+                        <span className="text-brand-violet-light truncate max-w-[90px]">{field.fontFamily}</span>
+                        <span className="opacity-40">|</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDuplicate(field.id);
+                          }}
+                          className="hover:text-brand-gold text-white/80 p-0.5 rounded hover:bg-white/10 transition-colors"
+                          title="Duplicate Field (Ctrl+D)"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCopy(field);
+                          }}
+                          className="hover:text-brand-gold text-white/80 p-0.5 rounded hover:bg-white/10 transition-colors"
+                          title="Copy Field (Ctrl+C)"
+                        >
+                          <Clipboard className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveField(field.id);
+                          }}
+                          className="hover:text-red-400 text-white/80 p-0.5 rounded hover:bg-white/10 transition-colors"
+                          title="Delete Field (Del)"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+
                     {/* Render content */}
                     {field.type === 'qr_code' ? (
                       <div className="w-full h-full flex flex-col items-center justify-center bg-white/80 border border-neutral-subtle/80 p-1">
@@ -1088,6 +1613,12 @@ export const TemplateStudioPage: React.FC = () => {
                           </div>
                         )}
                       </div>
+                    ) : field.fontSize === 0 ? (
+                      !isPreviewMode ? (
+                        <span className="text-[10px] italic text-neutral-secondary/80 px-1 py-0.5 rounded bg-white/70 border border-dashed border-neutral-subtle/80 font-mono">
+                          [Size 0 - Hidden]
+                        </span>
+                      ) : null
                     ) : (
                       <span className="truncate px-1 leading-tight">{previewText}</span>
                     )}
@@ -1102,6 +1633,81 @@ export const TemplateStudioPage: React.FC = () => {
                   </div>
                 );
               })}
+            </div>
+          </div>
+
+          {/* Floating Canvas Zoom Controller & HUD */}
+          <div className="absolute bottom-4 right-4 z-30 flex items-center gap-2 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-lg border border-neutral-subtle text-xs select-none animate-in fade-in duration-200">
+            <button
+              type="button"
+              onClick={() => setZoomLevel((z) => Math.max(25, z - 10))}
+              className="p-1.5 hover:bg-neutral-surface rounded-md text-neutral-secondary hover:text-neutral-main transition-colors"
+              title="Zoom Out (Ctrl -)"
+              aria-label="Zoom Out"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+
+            <input
+              type="range"
+              min="25"
+              max="300"
+              step="5"
+              value={zoomLevel}
+              onChange={(e) => setZoomLevel(Number(e.target.value))}
+              className="w-20 accent-brand-violet cursor-pointer h-1.5 bg-neutral-subtle rounded-lg"
+              title={`Zoom: ${zoomLevel}% (Ctrl + Wheel)`}
+            />
+
+            <button
+              type="button"
+              onClick={() => setZoomLevel((z) => Math.min(300, z + 10))}
+              className="p-1.5 hover:bg-neutral-surface rounded-md text-neutral-secondary hover:text-neutral-main transition-colors"
+              title="Zoom In (Ctrl +)"
+              aria-label="Zoom In"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+
+            <div className="h-4 w-px bg-neutral-subtle mx-0.5" />
+
+            <span className="font-mono text-[11px] font-bold text-neutral-main min-w-[38px] text-center">
+              {zoomLevel}%
+            </span>
+
+            <div className="flex items-center gap-1 pl-1 border-l border-neutral-subtle">
+              <button
+                type="button"
+                onClick={fitToScreen}
+                className="px-2 py-0.5 rounded bg-brand-violet/10 hover:bg-brand-violet/20 text-brand-violet font-semibold text-[10px] transition-colors"
+                title="Fit to Screen (Ctrl 0)"
+              >
+                Fit
+              </button>
+              <button
+                type="button"
+                onClick={() => setZoomLevel(100)}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-mono border transition-colors ${
+                  zoomLevel === 100
+                    ? 'bg-neutral-main text-white border-neutral-main font-bold'
+                    : 'bg-neutral-surface hover:bg-white text-neutral-secondary border-neutral-subtle'
+                }`}
+                title="100% Size"
+              >
+                100%
+              </button>
+              <button
+                type="button"
+                onClick={() => setZoomLevel(150)}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-mono border transition-colors ${
+                  zoomLevel === 150
+                    ? 'bg-neutral-main text-white border-neutral-main font-bold'
+                    : 'bg-neutral-surface hover:bg-white text-neutral-secondary border-neutral-subtle'
+                }`}
+                title="150% Zoom"
+              >
+                150%
+              </button>
             </div>
           </div>
         </main>
@@ -1214,33 +1820,135 @@ export const TemplateStudioPage: React.FC = () => {
                     Typography & Styling
                   </span>
 
-                  <Select
-                    label="Font Family"
-                    value={selectedField.fontFamily}
-                    onChange={(e) => handleUpdateSelectedField({ fontFamily: e.target.value })}
-                    options={[
-                      { value: 'Helvetica', label: 'Helvetica (Modern Sans-Serif - Matches Teal / Navy)' },
-                      { value: 'Times-Roman', label: 'Times Roman (Formal Academic Serif - Matches Gold / Classic)' },
-                      { value: 'Courier', label: 'Courier (Monospace - Technical / Code)' },
-                    ]}
-                  />
+                  {/* Font Family Selector with numerous options and category groups */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-secondary">
+                        Font Family
+                      </label>
+                      <span className="text-[10px] text-brand-violet font-medium font-mono">
+                        {ALL_CERTIFICATE_FONTS.length} Fonts
+                      </span>
+                    </div>
+                    <select
+                      value={selectedField.fontFamily}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (typeof document !== 'undefined' && document.fonts) {
+                          try {
+                            document.fonts.load(`16px "${val}"`);
+                            document.fonts.load(`bold 16px "${val}"`);
+                          } catch {
+                            // Fallback
+                          }
+                        }
+                        handleUpdateSelectedField({ fontFamily: val });
+                      }}
+                      className="block w-full rounded-md border border-neutral-subtle bg-white p-2 text-xs text-neutral-main focus-visible:outline-2 focus-visible:outline-brand-violet transition-colors cursor-pointer"
+                    >
+                      {CERTIFICATE_FONT_GROUPS.map((grp) => (
+                        <optgroup key={grp.group} label={grp.group}>
+                          {grp.fonts.map((f) => (
+                            <option key={f.value} value={f.value}>
+                              {f.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      label="Font Size (pt)"
-                      type="number"
-                      value={selectedField.fontSize}
-                      onChange={(e) => handleUpdateSelectedField({ fontSize: Math.max(6, parseInt(e.target.value) || 12) })}
-                    />
-                    <Select
-                      label="Weight"
-                      value={selectedField.fontWeight || 'normal'}
-                      onChange={(e) => handleUpdateSelectedField({ fontWeight: e.target.value })}
-                      options={[
-                        { value: 'normal', label: 'Regular' },
-                        { value: 'bold', label: 'Bold' },
-                      ]}
-                    />
+                    {/* Live Font Sample Preview */}
+                    <div
+                      className="p-2.5 bg-neutral-surface/60 rounded border border-neutral-subtle/80 text-center text-sm truncate text-neutral-main shadow-2xs"
+                      style={{ fontFamily: resolveCssFontFamily(selectedField.fontFamily) }}
+                    >
+                      {selectedField.fontFamily} — Namdapha Excellence
+                    </div>
+                  </div>
+
+                  {/* Font Size & Weight with zero support and steppers */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-secondary">
+                        Font Size ({template.pageUnit === 'px' ? 'px' : 'pt'})
+                      </label>
+                      <span className="text-[10px] font-mono text-neutral-secondary">
+                        {selectedField.fontSize === 0 ? 'Muted (Hidden)' : `${selectedField.fontSize} ${template.pageUnit === 'px' ? 'px' : 'pt'}`}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateSelectedField({
+                              fontSize: Math.max(0, (selectedField.fontSize ?? 12) - 1),
+                            })
+                          }
+                          className="w-8 h-8 flex items-center justify-center rounded border border-neutral-subtle hover:bg-neutral-surface font-bold text-neutral-main transition-colors text-sm shrink-0"
+                          title="Decrease font size (-1)"
+                        >
+                          -
+                        </button>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={300}
+                          value={selectedField.fontSize ?? 0}
+                          onChange={(e) => {
+                            const valStr = e.target.value;
+                            if (valStr === '') {
+                              handleUpdateSelectedField({ fontSize: 0 });
+                            } else {
+                              const parsed = parseInt(valStr, 10);
+                              handleUpdateSelectedField({ fontSize: isNaN(parsed) ? 0 : Math.max(0, parsed) });
+                            }
+                          }}
+                          className="text-center font-mono font-bold"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateSelectedField({
+                              fontSize: (selectedField.fontSize ?? 12) + 1,
+                            })
+                          }
+                          className="w-8 h-8 flex items-center justify-center rounded border border-neutral-subtle hover:bg-neutral-surface font-bold text-neutral-main transition-colors text-sm shrink-0"
+                          title="Increase font size (+1)"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      <Select
+                        label="Weight"
+                        value={selectedField.fontWeight || 'normal'}
+                        onChange={(e) => handleUpdateSelectedField({ fontWeight: e.target.value })}
+                        options={[
+                          { value: 'normal', label: 'Regular' },
+                          { value: 'bold', label: 'Bold' },
+                        ]}
+                      />
+                    </div>
+
+                    {/* Quick font size preset buttons (including 0) */}
+                    <div className="flex flex-wrap items-center gap-1 pt-1">
+                      {[0, 10, 12, 14, 16, 20, 24, 28, 36, 48].map((size) => (
+                        <button
+                          key={size}
+                          type="button"
+                          onClick={() => handleUpdateSelectedField({ fontSize: size })}
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-mono border transition-colors ${
+                            selectedField.fontSize === size
+                              ? 'bg-brand-violet text-white border-brand-violet font-bold'
+                              : 'bg-neutral-surface/60 border-neutral-subtle text-neutral-secondary hover:bg-white hover:text-neutral-main'
+                          }`}
+                        >
+                          {size === 0 ? '0 (Mute)' : `${size}`}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <Select
@@ -1318,23 +2026,85 @@ export const TemplateStudioPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Delete Field Button */}
-              <div className="pt-4 border-t border-neutral-subtle">
+              {/* Field Actions: Duplicate, Copy, Paste, Delete */}
+              <div className="pt-4 border-t border-neutral-subtle space-y-2">
+                <span className="font-semibold text-neutral-secondary uppercase tracking-wider text-[10px] block">
+                  Field Actions
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-xs"
+                    leftIcon={<Copy className="w-3.5 h-3.5" />}
+                    onClick={() => handleDuplicate(selectedField.id)}
+                    title="Duplicate Field (Ctrl+D)"
+                  >
+                    Duplicate (Ctrl+D)
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-xs"
+                    leftIcon={<Clipboard className="w-3.5 h-3.5" />}
+                    onClick={() => handleCopy(selectedField)}
+                    title="Copy Field (Ctrl+C)"
+                  >
+                    Copy (Ctrl+C)
+                  </Button>
+                </div>
+                {clipboardField && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-xs text-brand-violet border-brand-violet/40 bg-brand-violet/5 hover:bg-brand-violet/10 font-semibold"
+                    leftIcon={<Clipboard className="w-3.5 h-3.5" />}
+                    onClick={handlePaste}
+                    title="Paste Copied Field (Ctrl+V)"
+                  >
+                    Paste Copied Field (Ctrl+V)
+                  </Button>
+                )}
                 <Button
                   variant="destructive"
                   size="sm"
                   className="w-full text-xs"
                   leftIcon={<Trash2 className="w-3.5 h-3.5" />}
                   onClick={() => handleRemoveField(selectedField.id)}
+                  title="Delete Selected Field (Delete / Backspace)"
                 >
                   Delete Selected Field
                 </Button>
               </div>
             </div>
           ) : (
-            <div className="text-center py-12 text-xs text-neutral-secondary space-y-2">
-              <Sliders className="w-8 h-8 text-neutral-secondary/50 mx-auto" />
-              <p>Select any field on the canvas or from the active list to modify its coordinates and typography.</p>
+            <div className="py-8 text-xs text-neutral-secondary space-y-4">
+              <div className="text-center space-y-2">
+                <Sliders className="w-8 h-8 text-neutral-secondary/50 mx-auto" />
+                <p className="font-semibold text-neutral-main">No Field Selected</p>
+                <p>Select any field on the canvas or from the active list to modify its coordinates and typography.</p>
+              </div>
+
+              <div className="pt-4 border-t border-neutral-subtle">
+                <div className="p-3 bg-neutral-surface/60 rounded-lg border border-neutral-subtle space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-neutral-main font-semibold text-xs">
+                    <ImageIcon className="w-4 h-4 text-brand-violet" />
+                    <span>Certificate Background</span>
+                  </div>
+                  <p className="text-[11px] text-neutral-secondary leading-relaxed">
+                    Replace the background artwork with a new design while preserving every element's exact position.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-xs"
+                    leftIcon={<ImageIcon className="w-3.5 h-3.5 text-brand-violet" />}
+                    onClick={() => setIsChangeDesignModalOpen(true)}
+                  >
+                    Change Certificate Design
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </aside>
@@ -1398,9 +2168,7 @@ export const TemplateStudioPage: React.FC = () => {
         onClose={() => setIsPublishConfirmOpen(false)}
         onConfirm={handlePublishConfirm}
         title="Publish Template Layout?"
-        message={`Publishing will freeze this layout as version ${
-          template.status === 'published' ? template.versionNumber + 1 : template.versionNumber
-        } and make it available for official certificate issuance. Previously issued certificates will preserve their historical snapshots.`}
+        message="Publishing will finalize this layout and make it available for immediate certificate issuance across all official events and award categories."
         confirmLabel="Publish Layout"
         variant="info"
         isLoading={isPublishing}
@@ -1425,6 +2193,16 @@ export const TemplateStudioPage: React.FC = () => {
           }}
           isSample={true}
           hideVerificationCode={true}
+        />
+      )}
+
+      {/* 6. Change Certificate Design Modal */}
+      {template && (
+        <ChangeDesignModal
+          isOpen={isChangeDesignModalOpen}
+          onClose={() => setIsChangeDesignModalOpen(false)}
+          currentTemplate={template}
+          onApplyDesign={handleApplyDesign}
         />
       )}
     </div>
