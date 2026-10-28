@@ -7,7 +7,8 @@ import {
   Edit2,
   Archive,
   ExternalLink,
-  AlertCircle
+  AlertCircle,
+  Award,
 } from 'lucide-react';
 import { portalService } from '../../services';
 import { Event, EventCategory, EventScope, EventStatus, Template } from '../../types';
@@ -125,7 +126,7 @@ export const EventsPage: React.FC = () => {
           issuanceApprovalRequired: formApproval,
         });
       } else {
-        await portalService.createEvent({
+        const newEvent = await portalService.createEvent({
           name: formName.trim(),
           category: formCategory,
           scope: formScope,
@@ -135,6 +136,27 @@ export const EventsPage: React.FC = () => {
           defaultTemplateId: formTemplateId || undefined,
           issuanceApprovalRequired: formApproval,
         });
+
+        // Ensure the 5 default categories exist
+        const existingCats = await portalService.getAwardCategories(newEvent.id);
+        if (existingCats.length === 0) {
+          const defaultCategories = [
+            { name: 'First Place', description: 'Awarded to the 1st place winner' },
+            { name: 'Second Place', description: 'Awarded to the 2nd place runner-up' },
+            { name: 'Third Place', description: 'Awarded to the 3rd place runner-up' },
+            { name: 'Participation Certificate', description: 'Awarded to all verified active participants' },
+            { name: 'Certificate of Acknowledgement', description: 'Awarded to event judges, jury members, evaluators, and distinguished guests' },
+          ];
+          for (const cat of defaultCategories) {
+            await portalService.createAwardCategory({
+              eventId: newEvent.id,
+              name: cat.name,
+              description: cat.description,
+              templateId: formTemplateId || undefined,
+              status: 'active',
+            });
+          }
+        }
       }
       setIsModalOpen(false);
       await fetchData();
@@ -440,7 +462,7 @@ export const EventsPage: React.FC = () => {
                 { value: '', label: 'None (Set per Category)' },
                 ...templates.map((t) => ({
                   value: t.id,
-                  label: `${t.name} (v${t.versionNumber})`
+                  label: `${t.name} (${t.orientation})`
                 }))
               ]}
             />
@@ -458,6 +480,46 @@ export const EventsPage: React.FC = () => {
               className="block w-full rounded-md border border-neutral-subtle bg-white p-2.5 text-sm text-neutral-main placeholder:text-neutral-secondary/60 focus-visible:outline-2 focus-visible:outline-brand-violet transition-colors"
             />
           </div>
+
+          {/* 5 Default Categories Info (Shown when creating new event) */}
+          {!editingEvent && (
+            <div className="p-3.5 bg-brand-violet/5 rounded-xl border border-brand-violet/20 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-brand-midnight flex items-center gap-1.5">
+                  <Award className="w-4 h-4 text-brand-violet" />
+                  Default Award Categories (5 Auto-Generated)
+                </span>
+                <Badge variant="info" size="sm">
+                  5 Categories
+                </Badge>
+              </div>
+              <p className="text-[11px] text-neutral-secondary leading-relaxed">
+                Every newly created event automatically includes these five standard categories ready for certificate issuance:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                <div className="flex items-center gap-2 p-1.5 rounded-md bg-white border border-neutral-subtle/80 text-xs">
+                  <span className="text-amber-600 font-bold">🥇 1.</span>
+                  <span className="font-semibold text-neutral-main">First Place</span>
+                </div>
+                <div className="flex items-center gap-2 p-1.5 rounded-md bg-white border border-neutral-subtle/80 text-xs">
+                  <span className="text-slate-500 font-bold">🥈 2.</span>
+                  <span className="font-semibold text-neutral-main">Second Place</span>
+                </div>
+                <div className="flex items-center gap-2 p-1.5 rounded-md bg-white border border-neutral-subtle/80 text-xs">
+                  <span className="text-amber-800 font-bold">🥉 3.</span>
+                  <span className="font-semibold text-neutral-main">Third Place</span>
+                </div>
+                <div className="flex items-center gap-2 p-1.5 rounded-md bg-white border border-neutral-subtle/80 text-xs">
+                  <span className="text-indigo-600 font-bold">📜 4.</span>
+                  <span className="font-semibold text-neutral-main">Participation Certificate</span>
+                </div>
+                <div className="flex items-center gap-2 p-1.5 rounded-md bg-white border border-neutral-subtle/80 text-xs sm:col-span-2">
+                  <span className="text-emerald-600 font-bold">✉️ 5.</span>
+                  <span className="font-semibold text-neutral-main">Acknowledgment Letter For the Guest</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center space-x-2 pt-2">
             <input
