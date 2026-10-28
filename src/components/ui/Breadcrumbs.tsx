@@ -5,6 +5,7 @@ import { ChevronRight, Home } from 'lucide-react';
 export interface BreadcrumbItem {
   label: string;
   href?: string;
+  onClick?: () => void;
 }
 
 export const Breadcrumbs: React.FC<{ items: BreadcrumbItem[] }> = ({ items }) => {
@@ -25,17 +26,29 @@ export const Breadcrumbs: React.FC<{ items: BreadcrumbItem[] }> = ({ items }) =>
           return (
             <li key={index} className="flex items-center space-x-1.5">
               <ChevronRight className="w-3.5 h-3.5 text-neutral-secondary/50 shrink-0" />
-              {isLast || !item.href ? (
+              {isLast ? (
                 <span className="font-medium text-neutral-main truncate max-w-[200px]" aria-current="page">
                   {item.label}
                 </span>
-              ) : (
+              ) : item.onClick ? (
+                <button
+                  type="button"
+                  onClick={item.onClick}
+                  className="hover:text-brand-violet transition-colors truncate max-w-[160px] text-left cursor-pointer"
+                >
+                  {item.label}
+                </button>
+              ) : item.href ? (
                 <Link
                   to={item.href}
                   className="hover:text-brand-violet transition-colors truncate max-w-[160px]"
                 >
                   {item.label}
                 </Link>
+              ) : (
+                <span className="truncate max-w-[160px]">
+                  {item.label}
+                </span>
               )}
             </li>
           );
