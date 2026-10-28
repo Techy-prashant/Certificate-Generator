@@ -149,3 +149,17 @@ test('Phase 3 Signatory Management: Private Storage & Order Management', () => {
   assert.match(signatoriesContent, /Protected Storage Asset Boundary/i, 'SignatoriesPage must document private storage boundary');
   assert.match(signatoriesContent, /ConfirmDialog/, 'SignatoriesPage must guard activation/deactivation with ConfirmDialog');
 });
+
+test('Default Certificate of Acknowledgement in Every Event & Kavyadhara Judge Category', () => {
+  const mockDataContent = fs.readFileSync(path.join(projectRoot, 'src/services/mockData.ts'), 'utf-8');
+  const eventsPageContent = fs.readFileSync(path.join(projectRoot, 'src/pages/admin/EventsPage.tsx'), 'utf-8');
+  const issueModalContent = fs.readFileSync(path.join(projectRoot, 'src/components/admin/IssueCertificateModal.tsx'), 'utf-8');
+
+  // Verify Kavyadhara event has Certificate of Acknowledgement
+  assert.ok(mockDataContent.includes('cat-ack-cul-03'), 'Kavyadhara event must include Certificate of Acknowledgement category');
+  assert.ok(mockDataContent.includes('Kavyadhara'), 'Event name must reflect Kavyadhara');
+
+  // Verify EventsPage and IssueCertificateModal have Certificate of Acknowledgement in default categories
+  assert.ok(eventsPageContent.includes("'Certificate of Acknowledgement'"), 'EventsPage must include Certificate of Acknowledgement as default');
+  assert.ok(issueModalContent.includes("'Certificate of Acknowledgement'"), 'IssueCertificateModal must include Certificate of Acknowledgement as default');
+});

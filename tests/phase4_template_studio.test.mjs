@@ -49,15 +49,21 @@ test('Phase 4 Architecture & Contracts: Template Field Configuration & API Servi
     'apiInterface.ts must include updateTemplateFields'
   );
   assert.ok(
+    apiInterfaceContent.includes('updateTemplate('),
+    'apiInterface.ts must include updateTemplate for renaming & updating details'
+  );
+  assert.ok(
     apiInterfaceContent.includes('publishTemplate('),
     'apiInterface.ts must include publishTemplate'
   );
 
   // Verify Supabase and Mock service implementations
   assert.ok(supabaseServiceContent.includes('updateTemplateFields'), 'supabaseService must implement updateTemplateFields');
+  assert.ok(supabaseServiceContent.includes('updateTemplate'), 'supabaseService must implement updateTemplate');
   assert.ok(supabaseServiceContent.includes('publishTemplate'), 'supabaseService must implement publishTemplate');
   assert.ok(supabaseServiceContent.includes('template.published'), 'supabaseService must log template.published audit log');
   assert.ok(mockServiceContent.includes('updateTemplateFields'), 'mockApiService must implement updateTemplateFields');
+  assert.ok(mockServiceContent.includes('updateTemplate'), 'mockApiService must implement updateTemplate');
   assert.ok(mockServiceContent.includes('publishTemplate'), 'mockApiService must implement publishTemplate');
 });
 
@@ -85,11 +91,16 @@ test('Phase 4 Studio Editor: Route Registration & Visual Studio Component', () =
   assert.ok(studioContent.includes('pdfEngine.generateCertificatePdf'), 'Studio must integrate pdfEngine');
   assert.ok(studioContent.includes('handleSaveDraft'), 'Studio must contain save draft action');
   assert.ok(studioContent.includes('handlePublishConfirm'), 'Studio must contain publish with version increment');
+  assert.ok(studioContent.includes('handleSaveName'), 'Studio must allow inline template renaming');
 
   // Verify navigation button in TemplatesPage
   assert.ok(
     templatesContent.includes('/studio'),
     'TemplatesPage must contain Studio links/buttons for editing layouts'
+  );
+  assert.ok(
+    templatesContent.includes('handleSaveEditTemplate'),
+    'TemplatesPage must contain option to edit template name and details'
   );
 });
 
