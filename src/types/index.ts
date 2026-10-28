@@ -113,6 +113,7 @@ export interface Template {
   versionNumber: number;
   status: TemplateStatus;
   createdAt: string;
+  updatedAt?: string;
   publishedAt?: string;
 }
 

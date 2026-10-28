@@ -148,6 +148,12 @@ export function autoDetectCitation(text: string, eventName?: string, eventCatego
   if (lower.includes('3rd') || lower.includes('third') || lower.includes('bronze')) {
     return getDomainCitation('3rd', eventName, eventCategory);
   }
+  if (lower.includes('judge') || lower.includes('jury') || lower.includes('evaluat')) {
+    return `Presented with deep gratitude and respectful acknowledgment for serving as an esteemed Judge and evaluating the participants with exceptional expertise, discernment, and scholarly guidance at ${eventName || 'the event'}, organized by Namdapha House, IIT Madras.`;
+  }
+  if (lower.includes('acknowledg') || lower.includes('guest') || lower.includes('letter')) {
+    return `Presented with deep gratitude and respectful acknowledgment for serving as an esteemed Judge, jury member, and distinguished guest, offering invaluable mentorship, evaluation, and guidance during ${eventName || 'the event'}, organized by Namdapha House, IIT Madras.`;
+  }
   if (lower.includes('particip') || lower.includes('attend') || lower.includes('appreciation')) {
     return getDomainCitation('participation', eventName, eventCategory);
   }
