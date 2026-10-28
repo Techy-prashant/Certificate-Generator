@@ -1,7 +1,7 @@
 import React from 'react';
 import { Signatory } from '../../types';
 import { Select } from '../ui/Select';
-import { PenTool, CheckCircle2, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 
 export interface SignatureSelectionGroupProps {
   signatories: Signatory[];
@@ -25,9 +25,9 @@ export const SignatureSelectionGroup: React.FC<SignatureSelectionGroupProps> = (
   // Only consider active signatories
   const activeSignatories = signatories.filter((s) => s.status === 'active');
 
-  // Options for Left Signature: exclude whatever is currently selected on the Right
+  // Options for Left Signature: None + signatories not chosen on Right
   const leftOptions = [
-    { value: '', label: 'None (No left signature)' },
+    { value: '', label: 'None' },
     ...activeSignatories
       .filter((s) => s.id !== rightSignatureId)
       .map((s) => ({
@@ -36,9 +36,9 @@ export const SignatureSelectionGroup: React.FC<SignatureSelectionGroupProps> = (
       })),
   ];
 
-  // Options for Right Signature: exclude whatever is currently selected on the Left
+  // Options for Right Signature: None + signatories not chosen on Left
   const rightOptions = [
-    { value: '', label: 'None (No right signature)' },
+    { value: '', label: 'None' },
     ...activeSignatories
       .filter((s) => s.id !== leftSignatureId)
       .map((s) => ({
@@ -53,42 +53,30 @@ export const SignatureSelectionGroup: React.FC<SignatureSelectionGroupProps> = (
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <label className="text-xs font-semibold text-neutral-main flex items-center gap-1.5">
-          <PenTool className="w-3.5 h-3.5 text-brand-violet" />
-          <span>Certificate Signatures</span>
-          {required && <span className="text-rose-500">*</span>}
-        </label>
-        <span className="text-[11px] text-neutral-secondary">
-          Assign up to two distinct signatures (Left and Right)
-        </span>
-      </div>
-
       {activeSignatories.length === 0 ? (
-        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div>
+        <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-lg text-xs text-amber-900 flex items-start gap-2.5">
+          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
             <p className="font-semibold">No active signatories configured</p>
-            <p className="text-[11px] text-amber-700 mt-0.5">
-              Please create and activate signatories under{' '}
-              <a href="/admin/signatories" target="_blank" rel="noreferrer" className="underline font-bold">
-                Signatures
-              </a>{' '}
-              first.
+            <p className="text-[11px] text-amber-800">
+              Certificates can still be issued without signatures, or you can register signatories in the{' '}
+              <a href="/admin/signatories" target="_blank" rel="noreferrer" className="underline font-semibold hover:text-amber-950">
+                Signatories Registry
+              </a>.
             </p>
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* Left Signature Dropdown */}
-          <div className="space-y-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Left Signature Column */}
+          <div className="space-y-1.5">
             <Select
-              label="Left Signature (Position 1)"
+              label="Left Signature"
               value={leftSignatureId}
+              required={required}
               onChange={(e) => {
                 const newId = e.target.value;
                 onLeftChange(newId);
-                // If user somehow picked the right signature, clear the right signature
                 if (newId && newId === rightSignatureId) {
                   onRightChange('');
                 }
@@ -97,51 +85,42 @@ export const SignatureSelectionGroup: React.FC<SignatureSelectionGroupProps> = (
               disabled={disabled}
             />
 
-            {/* Left Preview Box */}
+            {/* Small clean preview only when selected */}
             {leftSignatory ? (
-              <div className="p-2.5 rounded-xl border border-brand-violet/20 bg-brand-violet/5 flex items-center gap-3 animate-in fade-in duration-150">
+              <div className="p-2 rounded-lg border border-neutral-subtle bg-neutral-surface/40 flex items-center gap-2.5 animate-in fade-in duration-150">
                 {leftSignatory.signatureAssetUrl ? (
-                  <div className="w-16 h-10 bg-white rounded-lg border border-neutral-subtle/80 flex items-center justify-center p-1 shrink-0 overflow-hidden">
+                  <div className="w-14 h-8 bg-white rounded border border-neutral-subtle flex items-center justify-center p-1 shrink-0">
                     <img
                       src={leftSignatory.signatureAssetUrl}
                       alt={leftSignatory.name}
-                      className="max-h-full max-w-full object-contain"
+                      className="max-h-full max-w-full object-contain pointer-events-none"
                     />
                   </div>
                 ) : (
-                  <div className="w-16 h-10 bg-neutral-surface rounded-lg border border-neutral-subtle flex items-center justify-center text-[10px] text-neutral-secondary shrink-0 font-mono">
+                  <div className="w-14 h-8 bg-neutral-surface rounded border border-neutral-subtle flex items-center justify-center text-[9px] text-neutral-secondary shrink-0 font-mono">
                     No Asset
                   </div>
                 )}
                 <div className="min-w-0 flex-1 text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-semibold text-neutral-main truncate">{leftSignatory.name}</span>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-brand-violet shrink-0" />
-                  </div>
-                  <span className="text-[10px] text-neutral-secondary block truncate">
-                    {leftSignatory.designation}
-                  </span>
-                  <span className="text-[9px] text-brand-violet font-semibold uppercase tracking-wider block mt-0.5">
-                    Position: Left
-                  </span>
+                  <p className="font-medium text-neutral-main truncate">{leftSignatory.name}</p>
+                  <p className="text-[11px] text-neutral-secondary truncate">{leftSignatory.designation}</p>
                 </div>
               </div>
             ) : (
-              <div className="p-2 rounded-xl border border-dashed border-neutral-subtle text-[11px] text-neutral-secondary text-center bg-neutral-surface/30">
-                No left signature selected
-              </div>
+              <p className="text-[11px] text-neutral-secondary/80 font-mono px-0.5">
+                No signature assigned to left position.
+              </p>
             )}
           </div>
 
-          {/* Right Signature Dropdown */}
-          <div className="space-y-2">
+          {/* Right Signature Column */}
+          <div className="space-y-1.5">
             <Select
-              label="Right Signature (Position 2)"
+              label="Right Signature"
               value={rightSignatureId}
               onChange={(e) => {
                 const newId = e.target.value;
                 onRightChange(newId);
-                // If user somehow picked the left signature, clear the left signature
                 if (newId && newId === leftSignatureId) {
                   onLeftChange('');
                 }
@@ -150,39 +129,31 @@ export const SignatureSelectionGroup: React.FC<SignatureSelectionGroupProps> = (
               disabled={disabled}
             />
 
-            {/* Right Preview Box */}
+            {/* Small clean preview only when selected */}
             {rightSignatory ? (
-              <div className="p-2.5 rounded-xl border border-brand-violet/20 bg-brand-violet/5 flex items-center gap-3 animate-in fade-in duration-150">
+              <div className="p-2 rounded-lg border border-neutral-subtle bg-neutral-surface/40 flex items-center gap-2.5 animate-in fade-in duration-150">
                 {rightSignatory.signatureAssetUrl ? (
-                  <div className="w-16 h-10 bg-white rounded-lg border border-neutral-subtle/80 flex items-center justify-center p-1 shrink-0 overflow-hidden">
+                  <div className="w-14 h-8 bg-white rounded border border-neutral-subtle flex items-center justify-center p-1 shrink-0">
                     <img
                       src={rightSignatory.signatureAssetUrl}
                       alt={rightSignatory.name}
-                      className="max-h-full max-w-full object-contain"
+                      className="max-h-full max-w-full object-contain pointer-events-none"
                     />
                   </div>
                 ) : (
-                  <div className="w-16 h-10 bg-neutral-surface rounded-lg border border-neutral-subtle flex items-center justify-center text-[10px] text-neutral-secondary shrink-0 font-mono">
+                  <div className="w-14 h-8 bg-neutral-surface rounded border border-neutral-subtle flex items-center justify-center text-[9px] text-neutral-secondary shrink-0 font-mono">
                     No Asset
                   </div>
                 )}
                 <div className="min-w-0 flex-1 text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-semibold text-neutral-main truncate">{rightSignatory.name}</span>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-brand-violet shrink-0" />
-                  </div>
-                  <span className="text-[10px] text-neutral-secondary block truncate">
-                    {rightSignatory.designation}
-                  </span>
-                  <span className="text-[9px] text-brand-violet font-semibold uppercase tracking-wider block mt-0.5">
-                    Position: Right
-                  </span>
+                  <p className="font-medium text-neutral-main truncate">{rightSignatory.name}</p>
+                  <p className="text-[11px] text-neutral-secondary truncate">{rightSignatory.designation}</p>
                 </div>
               </div>
             ) : (
-              <div className="p-2 rounded-xl border border-dashed border-neutral-subtle text-[11px] text-neutral-secondary text-center bg-neutral-surface/30">
-                No right signature selected
-              </div>
+              <p className="text-[11px] text-neutral-secondary/80 font-mono px-0.5">
+                No signature assigned to right position.
+              </p>
             )}
           </div>
         </div>
