@@ -13,7 +13,9 @@ import {
   Check,
   FileSpreadsheet,
   UploadCloud,
-  FileText
+  FileText,
+  Download,
+  Loader2
 } from 'lucide-react';
 import { portalService } from '../../services';
 import { Certificate, Event, Template } from '../../types';
@@ -29,7 +31,7 @@ import { LoadingState } from '../../components/ui/LoadingState';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { IssueCertificateModal } from '../../components/admin/IssueCertificateModal';
 import { ProtectedCertificateModal } from '../../components/admin/ProtectedCertificateModal';
-import { CertificateRenderData, getVerificationOrigin } from '../../services/pdfService';
+import { CertificateRenderData, getVerificationOrigin, pdfEngine, downloadPdfBlob } from '../../services/pdfService';
 import { useToast } from '../../contexts/ToastContext';
 
 export const CertificatesPage: React.FC = () => {
@@ -168,7 +170,63 @@ export const CertificatesPage: React.FC = () => {
     }
   };
 
-  // Contract legacy marker: handleDownloadFromInspect, handleDownloadDirect
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const handleDownloadDirect = async (cert: Certificate) => {
+    setDownloadingId(cert.id);
+    try {
+      const details = await portalService.getCertificateDetails(cert.id);
+      if (!details) throw new Error('Certificate snapshot details could not be loaded.');
+
+      const { templateSnapshot, signatorySnapshot } = details;
+      const origin = getVerificationOrigin();
+      const verificationUrl = `${origin}/verify/${cert.verificationCode}`;
+
+      const template: Template = {
+        id: templateSnapshot.templateId,
+        name: templateSnapshot.templateName,
+        backgroundUrl: templateSnapshot.backgroundUrl || '',
+        backgroundStoragePath: templateSnapshot.backgroundStoragePath,
+        pageWidth: templateSnapshot.pageWidth,
+        pageHeight: templateSnapshot.pageHeight,
+        pageUnit: templateSnapshot.pageUnit,
+        orientation: templateSnapshot.orientation,
+        fieldConfiguration: templateSnapshot.fieldConfiguration || [],
+        versionNumber: templateSnapshot.versionNumber,
+        status: 'published',
+        createdAt: new Date().toISOString(),
+      };
+
+      const renderData: CertificateRenderData = {
+        recipientName: cert.recipientName,
+        eventName: cert.eventName,
+        achievement: cert.achievement,
+        issueDate: cert.issueDate,
+        organizationName: cert.organizationName || 'Namdapha House, IIT Madras BS Degree',
+        verificationCode: cert.verificationCode,
+        verificationUrl,
+        signatories: (signatorySnapshot || []).map((s) => ({
+          name: s.name,
+          designation: s.designation,
+          signatureAssetUrl: s.signatureAssetUrl,
+        })),
+      };
+
+      const pdfBytes = await pdfEngine.generateCertificatePdf(template, renderData);
+      const safeFilename = `${cert.recipientName.replace(/[^a-zA-Z0-9_-]/g, '_')}_${cert.verificationCode}.pdf`;
+      downloadPdfBlob(pdfBytes, safeFilename);
+      toastSuccess(`Certificate for ${cert.recipientName} downloaded!`);
+    } catch (err: any) {
+      toastError(`Failed to download certificate: ${err.message}`);
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const handleDownloadFromInspect = async () => {
+    if (!inspectCert) return;
+    await handleDownloadDirect(inspectCert);
+  };
 
   const handleOpenPreview = async (cert: Certificate) => {
     setIsPreviewLoading(true);
@@ -504,6 +562,21 @@ export const CertificatesPage: React.FC = () => {
                               <Eye className="w-4 h-4" />
                             </button>
 
+                            {/* Download PDF */}
+                            <button
+                              onClick={() => handleDownloadDirect(cert)}
+                              disabled={downloadingId === cert.id}
+                              className="p-1.5 rounded-lg text-neutral-secondary hover:text-emerald-700 hover:bg-emerald-50 transition-colors disabled:opacity-50"
+                              title="Download Certificate PDF"
+                              aria-label="Download Certificate PDF"
+                            >
+                              {downloadingId === cert.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                              ) : (
+                                <Download className="w-4 h-4 text-emerald-600 hover:text-emerald-700" />
+                              )}
+                            </button>
+
 
                             {/* Edit Permitted Details */}
                             <button
@@ -634,6 +707,22 @@ export const CertificatesPage: React.FC = () => {
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleDownloadDirect(cert)}
+                                    disabled={downloadingId === cert.id}
+                                    leftIcon={
+                                      downloadingId === cert.id ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                                      ) : (
+                                        <Download className="w-3.5 h-3.5 text-emerald-600" />
+                                      )
+                                    }
+                                    className="text-xs"
+                                  >
+                                    {downloadingId === cert.id ? 'Generating PDF...' : 'Download PDF'}
+                                  </Button>
                                   <Link
                                     to={`/verify/${cert.verificationCode}`}
                                     target="_blank"
@@ -716,9 +805,23 @@ export const CertificatesPage: React.FC = () => {
               <Button variant="outline" size="sm" onClick={() => setInspectCert(null)}>
                 Close
               </Button>
-              {/* handleDownloadFromInspect preserved for contract compatibility */}
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleDownloadFromInspect}
+                disabled={downloadingId === inspectCert.id}
+                leftIcon={
+                  downloadingId === inspectCert.id ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5" />
+                  )
+                }
+              >
+                {downloadingId === inspectCert.id ? 'Generating...' : 'Download Official PDF'}
+              </Button>
               <Link to={`/verify/${inspectCert.verificationCode}`} target="_blank">
-                <Button variant="primary" size="sm" leftIcon={<ExternalLink className="w-3.5 h-3.5" />}>
+                <Button variant="outline" size="sm" leftIcon={<ExternalLink className="w-3.5 h-3.5" />}>
                   Public View
                 </Button>
               </Link>

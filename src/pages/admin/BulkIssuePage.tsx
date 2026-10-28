@@ -145,14 +145,15 @@ export const BulkIssuePage: React.FC = () => {
       ]);
 
       setBatches(bts);
-      const activeEvents = evts.filter((e) => e.status !== 'archived');
+      // Filter out archived and completed events (completed events cannot issue new certificates)
+      const activeEvents = evts.filter((e) => e.status !== 'archived' && e.status !== 'completed');
       setEvents(activeEvents);
       const publishedTpls = tpls.filter((t) => t.status === 'published');
       setTemplates(publishedTpls);
       const activeSigs = sigs.filter((s) => s.status === 'active');
       setSignatories(activeSigs);
 
-      if (activeEvents.length > 0 && !selectedEventId) {
+      if (activeEvents.length > 0 && (!selectedEventId || !activeEvents.some((e) => e.id === selectedEventId))) {
         setSelectedEventId(activeEvents[0].id);
       }
       if (publishedTpls.length > 0 && !selectedTemplateId) {
@@ -215,16 +216,18 @@ export const BulkIssuePage: React.FC = () => {
     if (!selectedEventId) return;
     setIsQuickCreatingCats(true);
     try {
-      const defaultCatNames = [
-        'First Place (Winner)',
-        'Second Place (Runner-up)',
-        'Third Place',
-        'Certificate of Participation',
+      const defaultCategories = [
+        { name: 'First Place', description: 'Awarded to the 1st place winner' },
+        { name: 'Second Place', description: 'Awarded to the 2nd place runner-up' },
+        { name: 'Third Place', description: 'Awarded to the 3rd place runner-up' },
+        { name: 'Participation Certificate', description: 'Awarded to all verified active participants' },
+        { name: 'Certificate of Acknowledgement', description: 'Awarded to event judges, jury members, evaluators, and distinguished guests' },
       ];
-      for (const name of defaultCatNames) {
+      for (const cat of defaultCategories) {
         await portalService.createAwardCategory({
           eventId: selectedEventId,
-          name,
+          name: cat.name,
+          description: cat.description,
           templateId: selectedTemplateId || undefined,
           status: 'active',
         });
@@ -835,7 +838,7 @@ export const BulkIssuePage: React.FC = () => {
                       onChange={(e) => setSelectedTemplateId(e.target.value)}
                       options={templates.map((tpl) => ({
                         value: tpl.id,
-                        label: `${tpl.name} (v${tpl.versionNumber} • ${tpl.orientation})`,
+                        label: `${tpl.name} (${tpl.orientation} • ${tpl.pageWidth}×${tpl.pageHeight} ${tpl.pageUnit})`,
                       }))}
                     />
                     {currentTemplate && (
@@ -1311,7 +1314,7 @@ export const BulkIssuePage: React.FC = () => {
                   <span className="mt-1 font-bold text-neutral-main text-xs sm:text-sm block truncate">
                     {currentTemplate?.name}
                   </span>
-                  <span className="text-[11px] text-neutral-secondary">v{currentTemplate?.versionNumber} • {currentTemplate?.orientation}</span>
+                  <span className="text-[11px] text-neutral-secondary capitalize">{currentTemplate?.orientation} layout</span>
                 </div>
 
                 <div className="p-3.5 bg-neutral-surface/50 rounded-xl border border-neutral-subtle">
