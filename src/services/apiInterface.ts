@@ -73,7 +73,17 @@ export interface CertificatePortalService {
   ): Promise<Template>;
   updateTemplateStatus(id: string, status: TemplateStatus): Promise<Template>;
   updateTemplateFields(id: string, fieldConfiguration: TemplateFieldConfig[]): Promise<Template>;
+  updateTemplate(
+    id: string,
+    updates: {
+      name?: string;
+      description?: string;
+      category?: string;
+    }
+  ): Promise<Template>;
   publishTemplate(id: string): Promise<Template>;
+  updateTemplateBackground(id: string, backgroundFile: File): Promise<Template>;
+  deleteTemplate(id: string): Promise<boolean>;
   
   // Signatories
   getSignatories(): Promise<Signatory[]>;

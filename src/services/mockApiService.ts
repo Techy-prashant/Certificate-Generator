@@ -137,6 +137,27 @@ class MockApiService implements CertificatePortalService {
       createdAt: new Date().toISOString(),
     };
     this.events.unshift(newEvent);
+
+    // Auto-create the 5 default categories requested by user
+    const defaultCategories = [
+      { name: 'First Place', description: 'Awarded to the 1st place winner' },
+      { name: 'Second Place', description: 'Awarded to the 2nd place runner-up' },
+      { name: 'Third Place', description: 'Awarded to the 3rd place runner-up' },
+      { name: 'Participation Certificate', description: 'Awarded to all verified active participants' },
+      { name: 'Acknowledgment Letter For the Guest', description: 'Certificate / letter of acknowledgment for guests, judges, and speakers' },
+    ];
+    for (let i = 0; i < defaultCategories.length; i++) {
+      const cat = defaultCategories[i];
+      this.awardCategories.push({
+        id: `cat-${Date.now()}-${i}`,
+        eventId: newEvent.id,
+        name: cat.name,
+        description: cat.description,
+        templateId: newEvent.defaultTemplateId,
+        status: 'active',
+      });
+    }
+
     this.auditLogs.unshift({
       id: `log-${Date.now()}`,
       actorName: mockCurrentUser.displayName,
@@ -144,7 +165,7 @@ class MockApiService implements CertificatePortalService {
       action: 'event.created',
       targetType: 'event',
       targetId: newEvent.id,
-      targetDescription: `Created event: ${newEvent.name}`,
+      targetDescription: `Created event: ${newEvent.name} with 5 default award categories`,
       createdAt: new Date().toISOString(),
     });
     return newEvent;
@@ -197,7 +218,21 @@ class MockApiService implements CertificatePortalService {
 
   async getAwardCategories(eventId: string): Promise<AwardCategory[]> {
     await this.delay();
-    return this.awardCategories.filter(c => c.eventId === eventId);
+    const eventCats = this.awardCategories.filter(c => c.eventId === eventId);
+    if (eventId && !eventCats.some(c => c.name.toLowerCase().includes('acknowledg'))) {
+      const targetEvent = this.events.find(e => e.id === eventId);
+      const ackCat: AwardCategory = {
+        id: `cat-ack-${eventId}`,
+        eventId,
+        name: 'Certificate of Acknowledgement',
+        description: 'Awarded to event judges, jury members, evaluators, and distinguished guests',
+        templateId: targetEvent?.defaultTemplateId || 'tpl-02',
+        status: 'active',
+      };
+      this.awardCategories.push(ackCat);
+      eventCats.push(ackCat);
+    }
+    return eventCats;
   }
 
   async createAwardCategory(category: Omit<AwardCategory, 'id'>): Promise<AwardCategory> {
@@ -332,6 +367,7 @@ class MockApiService implements CertificatePortalService {
     if (!template) throw new Error('Template not found');
 
     template.status = status;
+    template.updatedAt = new Date().toISOString();
     if (status === 'published') {
       template.publishedAt = new Date().toISOString();
     }
@@ -344,6 +380,7 @@ class MockApiService implements CertificatePortalService {
     if (!template) throw new Error('Template not found');
 
     template.fieldConfiguration = fieldConfiguration;
+    template.updatedAt = new Date().toISOString();
     this.auditLogs.unshift({
       id: `log-${Date.now()}`,
       actorName: mockCurrentUser.displayName,
@@ -352,6 +389,67 @@ class MockApiService implements CertificatePortalService {
       targetType: 'template',
       targetId: id,
       targetDescription: `Updated field configuration (${fieldConfiguration.length} fields) for template: ${template.name}`,
+      createdAt: new Date().toISOString(),
+    });
+
+    return template;
+  }
+
+  async updateTemplate(
+    id: string,
+    updates: {
+      name?: string;
+      description?: string;
+      category?: string;
+    }
+  ): Promise<Template> {
+    await this.delay();
+    const template = this.templates.find(t => t.id === id);
+    if (!template) throw new Error('Template not found');
+
+    if (updates.name !== undefined) template.name = updates.name.trim();
+    if (updates.description !== undefined) template.description = updates.description.trim();
+    if (updates.category !== undefined) template.category = updates.category;
+    template.updatedAt = new Date().toISOString();
+
+    this.auditLogs.unshift({
+      id: `log-${Date.now()}`,
+      actorName: mockCurrentUser.displayName,
+      actorRole: mockCurrentUser.role,
+      action: 'template.updated',
+      targetType: 'template',
+      targetId: id,
+      targetDescription: `Updated template: ${template.name}`,
+      createdAt: new Date().toISOString(),
+    });
+
+    return template;
+  }
+
+  async updateTemplateBackground(id: string, backgroundFile: File): Promise<Template> {
+    await this.delay();
+    const template = this.templates.find(t => t.id === id);
+    if (!template) throw new Error('Template not found');
+
+    const validMimes = ['image/png', 'image/jpeg', 'image/jpg'];
+    const nameLower = backgroundFile.name.toLowerCase();
+    const hasValidExt = nameLower.endsWith('.png') || nameLower.endsWith('.jpg') || nameLower.endsWith('.jpeg');
+    if (!validMimes.includes(backgroundFile.type.toLowerCase()) && !hasValidExt) {
+      throw new Error('Unsupported image format. Please upload a PNG or JPG background image.');
+    }
+
+    const newBgUrl = URL.createObjectURL(backgroundFile);
+    template.backgroundUrl = newBgUrl;
+    template.updatedAt = new Date().toISOString();
+
+    this.auditLogs.unshift({
+      id: `log-${Date.now()}`,
+      actorName: mockCurrentUser.displayName,
+      actorRole: mockCurrentUser.role,
+      action: 'template.background_updated',
+      targetType: 'template',
+      targetId: id,
+      targetDescription: `Replaced background design for template: ${template.name}`,
       createdAt: new Date().toISOString(),
     });
 
@@ -368,6 +466,7 @@ class MockApiService implements CertificatePortalService {
     }
     template.status = 'published';
     template.publishedAt = new Date().toISOString();
+    template.updatedAt = new Date().toISOString();
 
     this.auditLogs.unshift({
       id: `log-${Date.now()}`,
@@ -376,11 +475,32 @@ class MockApiService implements CertificatePortalService {
       action: 'template.published',
       targetType: 'template',
       targetId: id,
-      targetDescription: `Published template: ${template.name} (v${template.versionNumber})`,
+      targetDescription: `Published template: ${template.name}`,
       createdAt: new Date().toISOString(),
     });
 
     return template;
+  }
+
+  async deleteTemplate(id: string): Promise<boolean> {
+    await this.delay();
+    const index = this.templates.findIndex(t => t.id === id);
+    if (index === -1) throw new Error('Template not found');
+    const template = this.templates[index];
+    this.templates.splice(index, 1);
+
+    this.auditLogs.unshift({
+      id: `log-${Date.now()}`,
+      actorName: mockCurrentUser.displayName,
+      actorRole: mockCurrentUser.role,
+      action: 'template.deleted',
+      targetType: 'template',
+      targetId: id,
+      targetDescription: `Deleted template: ${template.name}`,
+      createdAt: new Date().toISOString(),
+    });
+
+    return true;
   }
 
   async getSignatories(): Promise<Signatory[]> {

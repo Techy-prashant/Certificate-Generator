@@ -364,13 +364,35 @@ export class SupabaseService implements CertificatePortalService {
 
     if (error || !data) throw new Error(error?.message || 'Failed to create event record');
 
+    // Auto-create the 5 default categories requested by user
+    const defaultCategories = [
+      { name: 'First Place', description: 'Awarded to the 1st place winner' },
+      { name: 'Second Place', description: 'Awarded to the 2nd place runner-up' },
+      { name: 'Third Place', description: 'Awarded to the 3rd place runner-up' },
+      { name: 'Participation Certificate', description: 'Awarded to all verified active participants' },
+      { name: 'Acknowledgment Letter For the Guest', description: 'Certificate / letter of acknowledgment for guests, judges, and speakers' },
+    ];
+    for (const cat of defaultCategories) {
+      try {
+        await client.from('award_categories').insert({
+          event_id: data.id,
+          name: cat.name,
+          description: cat.description,
+          template_id: data.default_template_id || null,
+          status: 'active',
+        });
+      } catch (catErr: any) {
+        console.warn('Failed to auto-create category in supabase:', cat.name, catErr);
+      }
+    }
+
     // Audit log
     await client.from('audit_logs').insert({
       actor_id: session.user.id,
       action: 'event.created',
       target_type: 'event',
       target_id: data.id,
-      metadata: { event_name: data.name, category: data.category, status: data.status },
+      metadata: { event_name: data.name, category: data.category, status: data.status, default_categories_created: 5 },
     });
 
     return {
@@ -778,6 +800,7 @@ export class SupabaseService implements CertificatePortalService {
         versionNumber: row.version_number,
         status: row.status,
         createdAt: row.created_at,
+        updatedAt: row.updated_at,
         publishedAt: row.published_at,
       };
     });
@@ -813,6 +836,68 @@ export class SupabaseService implements CertificatePortalService {
       versionNumber: data.version_number,
       status: data.status,
       createdAt: data.created_at,
+      updatedAt: data.updated_at,
+      publishedAt: data.published_at,
+    };
+  }
+
+  async updateTemplate(
+    id: string,
+    updates: {
+      name?: string;
+      description?: string;
+      category?: string;
+    }
+  ): Promise<Template> {
+    const client = this.checkClient();
+    const { data: { session } } = await client.auth.getSession();
+    if (!session?.user) throw new Error('Authentication required');
+
+    const payload: any = {
+      updated_at: new Date().toISOString(),
+    };
+    if (updates.name !== undefined) payload.name = updates.name.trim();
+    if (updates.description !== undefined) payload.description = updates.description.trim();
+    if (updates.category !== undefined) payload.category = updates.category;
+
+    const { data, error } = await client
+      .from('templates')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error || !data) throw new Error(error?.message || 'Failed to update template');
+
+    await client.from('audit_logs').insert({
+      actor_id: session.user.id,
+      action: 'template.updated',
+      target_type: 'template',
+      target_id: id,
+      metadata: updates,
+    });
+
+    let bgUrl = data.background_storage_path;
+    if (bgUrl && !bgUrl.startsWith('http') && !bgUrl.startsWith('data:')) {
+      bgUrl = client.storage.from('template-backgrounds').getPublicUrl(data.background_storage_path).data.publicUrl;
+    }
+
+    return {
+      id: data.id,
+      name: data.name,
+      description: data.description,
+      category: data.category,
+      backgroundUrl: bgUrl,
+      backgroundStoragePath: data.background_storage_path,
+      pageWidth: Number(data.page_width),
+      pageHeight: Number(data.page_height),
+      pageUnit: data.page_unit,
+      orientation: data.orientation,
+      fieldConfiguration: data.field_configuration || [],
+      versionNumber: data.version_number,
+      status: data.status,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
       publishedAt: data.published_at,
     };
   }
@@ -1011,6 +1096,79 @@ export class SupabaseService implements CertificatePortalService {
     };
   }
 
+  async updateTemplateBackground(id: string, backgroundFile: File): Promise<Template> {
+    const client = this.checkClient();
+    const { data: { session } } = await client.auth.getSession();
+    if (!session?.user) throw new Error('Authentication required');
+
+    const validMimes = ['image/png', 'image/jpeg', 'image/jpg'];
+    const nameLower = backgroundFile.name.toLowerCase();
+    const hasValidExt = nameLower.endsWith('.png') || nameLower.endsWith('.jpg') || nameLower.endsWith('.jpeg');
+    if (!validMimes.includes(backgroundFile.type.toLowerCase()) && !hasValidExt) {
+      throw new Error('Unsupported image format. Please upload a PNG or JPG background image.');
+    }
+    if (backgroundFile.size > 15 * 1024 * 1024) {
+      throw new Error('Image file is too large. Maximum size is 15 MB.');
+    }
+
+    const cleanName = backgroundFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const storagePath = `backgrounds/${Date.now()}-${cleanName}`;
+
+    const { error: uploadErr } = await client.storage
+      .from('template-backgrounds')
+      .upload(storagePath, backgroundFile, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: backgroundFile.type,
+      });
+
+    if (uploadErr) {
+      throw new Error(`Failed to upload template background: ${uploadErr.message}`);
+    }
+
+    const { data, error } = await client
+      .from('templates')
+      .update({
+        background_storage_path: storagePath,
+        background_mime_type: backgroundFile.type,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error || !data) throw new Error(error?.message || 'Failed to update template background');
+
+    await client.from('audit_logs').insert({
+      actor_id: session.user.id,
+      action: 'template.background_updated',
+      target_type: 'template',
+      target_id: data.id,
+      metadata: { name: data.name, storagePath },
+    });
+
+    const publicUrl = client.storage.from('template-backgrounds').getPublicUrl(storagePath).data.publicUrl;
+
+    return {
+      id: data.id,
+      name: data.name,
+      description: data.description,
+      category: data.category,
+      backgroundUrl: publicUrl,
+      backgroundStoragePath: storagePath,
+      pageWidth: Number(data.page_width),
+      pageHeight: Number(data.page_height),
+      pageUnit: data.page_unit,
+      orientation: data.orientation,
+      fieldConfiguration: data.field_configuration || [],
+      versionNumber: data.version_number,
+      status: data.status,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+      publishedAt: data.published_at,
+    };
+  }
+
   async publishTemplate(id: string): Promise<Template> {
     const client = this.checkClient();
     const { data: { session } } = await client.auth.getSession();
@@ -1063,7 +1221,27 @@ export class SupabaseService implements CertificatePortalService {
       status: data.status,
       createdAt: data.created_at,
       publishedAt: data.published_at,
+      updatedAt: data.updated_at,
     };
+  }
+
+  async deleteTemplate(id: string): Promise<boolean> {
+    const client = this.checkClient();
+    const { data: { session } } = await client.auth.getSession();
+    if (!session?.user) throw new Error('Authentication required');
+
+    const { error } = await client.from('templates').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+
+    await client.from('audit_logs').insert({
+      actor_id: session.user.id,
+      action: 'template.deleted',
+      target_type: 'template',
+      target_id: id,
+      metadata: { deleted_at: new Date().toISOString() },
+    });
+
+    return true;
   }
 
   // 6. Signatories (Private Storage Protected)
@@ -1441,8 +1619,12 @@ export class SupabaseService implements CertificatePortalService {
 
   async issueCertificate(input: IssueCertificateInput): Promise<Certificate> {
     const client = this.checkClient();
+    // Validate session and actively refresh expired JWT tokens
+    const { data: { user }, error: userErr } = await client.auth.getUser();
     const { data: { session } } = await client.auth.getSession();
-    if (!session?.user) throw new Error('Authentication required for certificate issuance');
+    if (userErr || !session?.user || !user) {
+      throw new Error('Your login session has expired. Please refresh the page or sign in again.');
+    }
 
     // 1. Fetch Event and validate
     const { data: eventData, error: eventErr } = await client
@@ -1450,7 +1632,14 @@ export class SupabaseService implements CertificatePortalService {
       .select('id, name, status, event_date')
       .eq('id', input.eventId)
       .single();
-    if (eventErr || !eventData) throw new Error('Selected event not found');
+    if (eventErr) {
+      console.error('[SupabaseService] Event lookup error:', eventErr);
+      if (eventErr.code === 'PGRST301' || eventErr.message?.toLowerCase().includes('jwt')) {
+        throw new Error('Your session has expired. Please refresh the page or sign in again.');
+      }
+      throw new Error(`Failed to load event: ${eventErr.message}`);
+    }
+    if (!eventData) throw new Error('Selected event not found');
     if (eventData.status === 'archived') {
       throw new Error('Cannot issue certificates for an archived event.');
     }
@@ -1461,7 +1650,11 @@ export class SupabaseService implements CertificatePortalService {
       .select('id, name')
       .eq('id', input.awardCategoryId)
       .single();
-    if (catErr || !catData) throw new Error('Selected award category not found');
+    if (catErr) {
+      console.error('[SupabaseService] Award category lookup error:', catErr);
+      throw new Error(`Failed to load award category: ${catErr.message}`);
+    }
+    if (!catData) throw new Error('Selected award category not found');
 
     // 3. Fetch Template
     const { data: tplData, error: tplErr } = await client
@@ -1469,7 +1662,11 @@ export class SupabaseService implements CertificatePortalService {
       .select('*')
       .eq('id', input.templateId)
       .single();
-    if (tplErr || !tplData) throw new Error('Selected template not found');
+    if (tplErr) {
+      console.error('[SupabaseService] Template lookup error:', tplErr);
+      throw new Error(`Failed to load template: ${tplErr.message}`);
+    }
+    if (!tplData) throw new Error('Selected template not found');
 
     // 4. Fetch Signatories in order (enforce uniqueness)
     const uniqueSigIds = Array.from(new Set(input.signatoryIds));
@@ -1481,7 +1678,7 @@ export class SupabaseService implements CertificatePortalService {
       .from('signatories')
       .select('*')
       .in('id', input.signatoryIds);
-    if (sigsErr) throw new Error('Failed to retrieve signatories');
+    if (sigsErr) throw new Error(`Failed to retrieve signatories: ${sigsErr.message}`);
 
     // Order signatories matching input.signatoryIds
     const orderedSigs = input.signatoryIds
