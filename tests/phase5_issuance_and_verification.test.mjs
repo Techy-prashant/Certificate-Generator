@@ -216,7 +216,7 @@ test('Phase 5 PDF Generation from Preserved Certificate Snapshots', async () => 
 test('Phase 5 Verification & QR Code: Canonical Production Domain & Localhost Suppression', () => {
   const pdfServiceContent = fs.readFileSync(path.join(projectRoot, 'src/services/pdfService.ts'), 'utf-8');
   const envExampleContent = fs.readFileSync(path.join(projectRoot, '.env.example'), 'utf-8');
-  const envLocalContent = fs.readFileSync(path.join(projectRoot, '.env.local'), 'utf-8');
+  const envLocalPath = path.join(projectRoot, '.env.local');
 
   // Verify production domain constant and helper
   assert.ok(
@@ -237,9 +237,12 @@ test('Phase 5 Verification & QR Code: Canonical Production Domain & Localhost Su
     envExampleContent.includes('VITE_PUBLIC_PORTAL_URL=https://certificate-generator-liart-pi.vercel.app'),
     '.env.example must specify Vercel portal URL'
   );
-  assert.ok(
-    envLocalContent.includes('VITE_PUBLIC_PORTAL_URL=https://certificate-generator-liart-pi.vercel.app'),
-    '.env.local must specify Vercel portal URL'
-  );
+  if (fs.existsSync(envLocalPath)) {
+    const envLocalContent = fs.readFileSync(envLocalPath, 'utf-8');
+    assert.ok(
+      envLocalContent.includes('VITE_PUBLIC_PORTAL_URL=https://certificate-generator-liart-pi.vercel.app'),
+      '.env.local must specify Vercel portal URL'
+    );
+  }
 });
 
